@@ -1,0 +1,57 @@
+name: BLACK PAGES Quality Gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Lint application
+        run: npm run lint
+
+      - name: Build production application
+        run: npm run build
+
+      - name: Verify evidence-review safety contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="supabase/migrations/20260804110000_black_pages_evidence_review_gate.sql"
+          test -f "$file"
+          grep -Fq "auth.role()<>'service_role'" "$file"
+          grep -Fq "Reviewer and decision reason are required" "$file"
+          grep -Fq "Explicit public ownership evidence is incomplete" "$file"
+          grep -Fq "new_directory_record_published',false" "$file"
+          grep -Fq "status='revoked'" "$file"
+          grep -Fq "expires_at" "$file"
+          grep -Fq "revoke all on table public.black_pages_evidence_reviews from public,anon,authenticated" "$file"
+          if grep -Eqi "grant .*black_pages_evidence_reviews.*(anon|authenticated)" "$file"; then
+            echo "Private review ledger must not be granted to client roles"
+            exit 1
+          fi
+          if grep -Eqi "grant execute .*black_pages_(review|revoke).* to (anon|authenticated)" "$file"; then
+            echo "Review decisions must remain service-role only"
+            exit 1
+          fi
+
+      - name: Audit critical production dependencies
+        run: npm audit --audit-level=critical

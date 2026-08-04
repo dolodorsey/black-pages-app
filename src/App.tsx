@@ -13,11 +13,11 @@ import {
   Globe2,
   Heart,
   Home,
-  Instagram,
+  Camera,
   LocateFixed,
   LogIn,
   LogOut,
-  Map,
+  Map as MapIcon,
   MapPin,
   Navigation,
   Phone,
@@ -234,7 +234,7 @@ export default function App() {
   }, [toast])
 
   const categories = useMemo(() => {
-    const counts = new Map<string, number>()
+    const counts = new globalThis.Map<string, number>()
     businesses.forEach(business => counts.set(business.category, (counts.get(business.category) || 0) + 1))
     return [...counts.entries()].sort((a, b) => b[1] - a[1])
   }, [businesses])
@@ -426,7 +426,7 @@ export default function App() {
       {([
         ['home', Home, 'Home'],
         ['discover', Compass, 'Discover'],
-        ['map', Map, 'Map'],
+        ['map', MapIcon, 'Map'],
         ['saved', Bookmark, 'Saved'],
         ['profile', UserRound, 'Profile'],
       ] as const).map(([id, Icon, label]) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}><Icon size={20} /><span>{label}</span></button>)}
@@ -445,7 +445,7 @@ export default function App() {
             {selected.phone && <a href={`tel:${selected.phone}`}><Phone /><span>Call</span></a>}
             <a href={mapsUrl(selected)} target="_blank" rel="noreferrer"><Navigation /><span>Directions</span></a>
             {selected.website_url && <a href={selected.website_url} target="_blank" rel="noreferrer"><Globe2 /><span>Website</span></a>}
-            {selected.instagram_handle && <a href={`https://instagram.com/${selected.instagram_handle.replace('@', '')}`} target="_blank" rel="noreferrer"><Instagram /><span>Instagram</span></a>}
+            {selected.instagram_handle && <a href={`https://instagram.com/${selected.instagram_handle.replace('@', '')}`} target="_blank" rel="noreferrer"><Camera /><span>Instagram</span></a>}
           </div>
           <button className={`sheet-save ${savedIds.includes(selected.directory_id) ? 'saved' : ''}`} onClick={() => toggleFavorite(selected.directory_id)}><Bookmark fill={savedIds.includes(selected.directory_id) ? 'currentColor' : 'none'} /> {savedIds.includes(selected.directory_id) ? 'Saved to My Black Pages' : 'Save to My Black Pages'}</button>
           <button className="claim-button" onClick={() => { setClaimName(user?.user_metadata?.full_name || ''); setClaimEmail(user?.email || ''); setClaimOpen(true) }}><ShieldCheck /> Own this business? Claim this profile <ChevronRight /></button>

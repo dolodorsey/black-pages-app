@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeft,
   ArrowRight,
   BadgeCheck,
   Bookmark,
@@ -9,7 +8,6 @@ import {
   Check,
   ChevronRight,
   Compass,
-  ExternalLink,
   Globe2,
   Heart,
   Home,

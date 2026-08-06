@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeft,
   ArrowRight,
   BadgeCheck,
   Bookmark,
@@ -9,7 +8,6 @@ import {
   Check,
   ChevronRight,
   Compass,
-  ExternalLink,
   Globe2,
   Heart,
   Home,
@@ -140,6 +138,13 @@ function Rating({ business }: { business: DirectoryBusiness }) {
   return <span className="rating"><Star size={12} fill="currentColor" /> {Number(business.rating).toFixed(1)}{business.review_count ? <small>({business.review_count})</small> : null}</span>
 }
 
+function BusinessImage({ src }: { src: string | null }) {
+  const [failed, setFailed] = useState(false)
+  return src && !failed
+    ? <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />
+    : <div className="image-fallback"><Store /></div>
+}
+
 function BusinessCard({ business, saved, onOpen, onSave, compact = false }: {
   business: DirectoryBusiness
   saved: boolean
@@ -149,7 +154,7 @@ function BusinessCard({ business, saved, onOpen, onSave, compact = false }: {
 }) {
   return <article className={`business-card ${compact ? 'compact' : ''}`} onClick={onOpen}>
     <div className="business-image">
-      {business.image_url ? <img src={business.image_url} alt="" loading="lazy" /> : <div className="image-fallback"><Store /></div>}
+      <BusinessImage src={business.image_url} />
       <div className="image-shade" />
       <button className={`save-button ${saved ? 'saved' : ''}`} aria-label={saved ? 'Remove from saved' : 'Save business'} onClick={event => { event.stopPropagation(); onSave() }}>
         <Bookmark size={17} fill={saved ? 'currentColor' : 'none'} />
@@ -435,7 +440,7 @@ export default function App() {
     {selected && <div className="sheet-backdrop" onMouseDown={() => setSelected(null)}>
       <article className="business-sheet" onMouseDown={event => event.stopPropagation()}>
         <button className="sheet-close" onClick={() => setSelected(null)}><X /></button>
-        <div className="sheet-image">{selected.image_url ? <img src={selected.image_url} alt="" /> : <div className="image-fallback"><Store /></div>}<div className="image-shade" /><StatusBadge business={selected} /></div>
+        <div className="sheet-image"><BusinessImage src={selected.image_url} /><div className="image-shade" /><StatusBadge business={selected} /></div>
         <div className="sheet-copy">
           <div className="card-meta"><span>{labelCategory(selected.category)}</span><Rating business={selected} /></div>
           <h2>{selected.business_name}</h2>

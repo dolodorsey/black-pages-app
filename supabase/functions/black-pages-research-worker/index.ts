@@ -128,6 +128,20 @@ function extractOwnershipEvidence(text: string) {
   return [...snippets];
 }
 
+function evidenceLinks(html: string, base: URL) {
+  const links = new Set<string>();
+  const pattern = /href\s*=\s*["']([^"'#]+)["']/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(html)) && links.size < 4) {
+    if (!/(about|our[-_ ]?story|founder|ownership|mission|who[-_ ]?we[-_ ]?are)/i.test(match[1])) continue;
+    try {
+      const target = validatePublicUrl(new URL(match[1], base).toString());
+      if (target.hostname === base.hostname) links.add(target.toString());
+    } catch { /* Ignore malformed or non-public links. */ }
+  }
+  return [...links];
+}
+
 async function fetchPublicEvidence(candidate: Candidate): Promise<FetchEvidence> {
   const started = Date.now();
   if (!candidate.website_url) {
@@ -189,11 +203,40 @@ async function fetchPublicEvidence(candidate: Candidate): Promise<FetchEvidence>
     const isText = !contentType || /text|html|xhtml|json/i.test(contentType);
     const html = isText ? await readLimited(response) : '';
     const text = htmlToText(html);
-    const evidence = extractOwnershipEvidence(text);
+    let evidence = extractOwnershipEvidence(text);
+    let evidenceUrl = current.toString();
+
+    // Ownership language commonly lives on an About or founder page rather
+    // than the homepage. Inspect a small, same-host, explicitly relevant set.
+    if (evidence.length === 0 && response.ok && /html|xhtml/i.test(contentType || 'text/html')) {
+      for (const link of evidenceLinks(html, current).slice(0, 2)) {
+        try {
+          const target = validatePublicUrl(link);
+          const detailResponse = await fetch(target, {
+            method: 'GET',
+            redirect: 'follow',
+            signal: AbortSignal.timeout(6_000),
+            headers: {
+              'User-Agent': 'TheBlackPagesResearchBot/1.1 (+public business verification)',
+              'Accept': 'text/html,application/xhtml+xml;q=0.9,text/plain;q=0.8,*/*;q=0.2',
+            },
+          });
+          const detailType = detailResponse.headers.get('content-type') || '';
+          if (!detailResponse.ok || !/text|html|xhtml/i.test(detailType)) continue;
+          const detailText = htmlToText(await readLimited(detailResponse));
+          const detailEvidence = extractOwnershipEvidence(detailText);
+          if (detailEvidence.length > 0) {
+            evidence = detailEvidence;
+            evidenceUrl = target.toString();
+            break;
+          }
+        } catch { /* Continue with the homepage result. */ }
+      }
+    }
     return {
       reachable: response.status >= 200 && response.status < 500,
       checked_url: candidate.website_url,
-      final_url: current.toString(),
+      final_url: evidenceUrl,
       fetch_status: response.status,
       content_type: contentType,
       page_title: titleFromHtml(html),

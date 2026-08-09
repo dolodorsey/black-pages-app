@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/write-build-info.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "typecheck": "tsc -b",

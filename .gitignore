@@ -9,3 +9,4 @@ vite.config.js
 vite.config.d.ts
 .vercel
 .env*
+public/build-info.json

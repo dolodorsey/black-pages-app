@@ -39,3 +39,11 @@ export const listingCategories = [
 export function labelCategory(value: string) {
   return categoryLabels[value] || value.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
 }
+
+/**
+ * Pluralise a count without lying about it. "1 businesses" reads as broken
+ * data; during a directory outage the count can legitimately be 1 or 0.
+ */
+export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}

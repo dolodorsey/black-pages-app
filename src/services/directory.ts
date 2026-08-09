@@ -142,6 +142,31 @@ export function featuredBusinesses(businesses: readonly DirectoryBusiness[]): Di
   return businesses.filter(business => business.featured || Number(business.rating || 0) >= 4.5).slice(0, 8)
 }
 
+/**
+ * The single city a set of businesses belongs to, or null when it spans more
+ * than one. Used so a heading never claims a city the listings do not share —
+ * the directory is multi-city, and the featured rail is not filtered by city.
+ */
+export function singleCity(businesses: readonly DirectoryBusiness[]): string | null {
+  const cities = new Set(
+    businesses.map(business => (business.city || '').trim()).filter(city => city.length > 0),
+  )
+  return cities.size === 1 ? [...cities][0] : null
+}
+
+/**
+ * Distinct images across a set of listings.
+ *
+ * Deliberately counts DISTINCT urls, not listings-that-have-an-image: the
+ * sourced directory reuses a small pool of stock photography, so counting
+ * listings overstates how much real imagery exists.
+ */
+export function distinctImageCount(businesses: readonly DirectoryBusiness[]): number {
+  return new Set(
+    businesses.map(business => business.image_url).filter((url): url is string => Boolean(url)),
+  ).size
+}
+
 export type DirectoryResult = {
   businesses: DirectoryBusiness[]
   /** Operator-facing message when the published count is unknown. */

@@ -30,7 +30,7 @@ import { BusinessCard } from './components/BusinessCard'
 import { CategoryFilterRail, CategoryRail, DirectorySearch, FloatingSearch } from './components/DirectoryControls'
 import { MapPanel } from './components/MapPanel'
 import { AppMark, EmptyState, Rating, StatusBadge } from './components/primitives'
-import { labelCategory, listingCategories } from './lib/categories'
+import { labelCategory, listingCategories, pluralize } from './lib/categories'
 import { mapsUrl } from './lib/maps'
 import { getAppEnv, getSupabaseClient } from './lib/supabase'
 import {
@@ -42,6 +42,7 @@ import {
   filterDirectory,
   mapReadyBusinesses,
   removeFavorite,
+  singleCity,
   submitOwnerClaim,
   type DirectoryBusiness,
 } from './services/directory'
@@ -131,10 +132,18 @@ export default function App() {
   const featured = featuredBusinesses(businesses)
   const hero = featured[0] || businesses[0]
   const mapReady = mapReadyBusinesses(filtered)
+  // Stat tiles must describe the real set, not flatter it. "On the map" counts
+  // listings we can actually plot; the previous "Visual profiles" tile counted
+  // listings with any image, which overstated a small pool of reused stock art.
+  const mapReadyCount = mapReadyBusinesses(businesses).length
+  const featuredRail = featured.length ? featured : businesses
+  const featuredCity = singleCity(featuredRail.slice(0, 8))
+  // Only name a city the filtered results actually share.
+  const discoverCity = singleCity(filtered)
   const savedBusinesses = businesses.filter(business => savedIds.includes(business.directory_id))
   // Never invent a total: show the real published count, or nothing at all.
   const directoryCount = businesses.length
-  const exploreLabel = directoryCount > 0 ? `Explore ${directoryCount} businesses` : 'Explore the directory'
+  const exploreLabel = directoryCount > 0 ? `Explore ${pluralize(directoryCount, 'business', 'businesses')}` : 'Explore the directory'
 
   async function toggleFavorite(directoryId: string) {
     if (!user) { setAuthOpen(true); setToast('Sign in to save businesses.'); return }
@@ -241,15 +250,15 @@ export default function App() {
         <section className="stats-strip">
           <div><strong>{businesses.length}</strong><span>Black-owned profiles</span></div>
           <div><strong>{categories.length}</strong><span>Categories</span></div>
-          <div><strong>{businesses.filter(item => item.image_url).length}</strong><span>Visual profiles</span></div>
+          <div><strong>{mapReadyCount}</strong><span>On the map</span></div>
         </section>
 
         <CategoryRail categories={categories} onSelectCategory={goDiscover} onSeeAll={() => goDiscover()} />
 
         <section className="section-block dark-section">
-          <div className="section-title"><div><span>TOP PROFILES</span><h2>Popular in Atlanta</h2></div></div>
+          <div className="section-title"><div><span>TOP PROFILES</span><h2>{featuredCity ? `Popular in ${featuredCity}` : 'Popular right now'}</h2></div></div>
           <div className="horizontal-cards">
-            {(featured.length ? featured : businesses).slice(0, 8).map(business => <BusinessCard compact key={business.directory_id} business={business} saved={savedIds.includes(business.directory_id)} onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}
+            {featuredRail.slice(0, 8).map(business => <BusinessCard compact key={business.directory_id} business={business} saved={savedIds.includes(business.directory_id)} onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}
           </div>
         </section>
 
@@ -260,7 +269,7 @@ export default function App() {
       </>}
 
       {tab === 'discover' && <section className="discover-screen">
-        <div className="screen-heading"><span>DIRECTORY</span><h1>Find Black-owned.</h1><p>{filtered.length} results across Atlanta</p></div>
+        <div className="screen-heading"><span>DIRECTORY</span><h1>Find Black-owned.</h1><p>{pluralize(filtered.length, 'result')}{discoverCity ? ` across ${discoverCity}` : ''}</p></div>
         <DirectorySearch query={query} onQueryChange={setQuery} />
         <CategoryFilterRail categories={categories} category={category} onCategoryChange={setCategory} />
         {loading ? <EmptyState icon={<Sparkles />} title="Opening the directory" body="Loading the live Black business network." /> : error ? <EmptyState icon={<Building2 />} title="Directory unavailable" body={error} /> : filtered.length === 0 ? <EmptyState icon={<Search />} title="No matches yet" body="Try another category, neighborhood, or search." /> : <div className="business-grid">{filtered.map(business => <BusinessCard key={business.directory_id} business={business} saved={savedIds.includes(business.directory_id)} onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}</div>}

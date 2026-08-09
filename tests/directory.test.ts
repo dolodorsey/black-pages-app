@@ -3,11 +3,13 @@ import test from 'node:test'
 import type { DirectoryRow } from '../src/lib/database.types.ts'
 import {
   countByCategory,
+  distinctImageCount,
   featuredBusinesses,
   filterDirectory,
   mapReadyBusinesses,
   normalizeDirectoryRow,
   normalizeDirectoryRows,
+  singleCity,
 } from '../src/services/directory.ts'
 
 const baseRow: DirectoryRow = {
@@ -148,4 +150,37 @@ test('mapReadyBusinesses keeps only rows with both coordinates', () => {
 
 test('featuredBusinesses includes flagged and highly rated rows only', () => {
   assert.deepEqual(featuredBusinesses(directory).map(item => item.directory_id), ['venue:1', 'venue:2'])
+})
+
+function biz(overrides: Partial<DirectoryRow> = {}) {
+  return normalizeDirectoryRow(makeRow(overrides))
+}
+
+test('singleCity returns the city when every listing shares it', () => {
+  assert.equal(singleCity([biz({ city: 'Atlanta' }), biz({ city: 'Atlanta' })]), 'Atlanta')
+})
+
+test('singleCity returns null when the set spans more than one city', () => {
+  assert.equal(singleCity([biz({ city: 'Atlanta' }), biz({ city: 'Phoenix' })]), null)
+})
+
+test('singleCity ignores blank cities and returns null for an empty set', () => {
+  assert.equal(singleCity([biz({ city: 'Atlanta' }), biz({ city: '  ' })]), 'Atlanta')
+  assert.equal(singleCity([]), null)
+})
+
+test('distinctImageCount counts distinct urls, not listings with an image', () => {
+  const shared = 'https://images.unsplash.com/photo-1517991104123'
+  assert.equal(
+    distinctImageCount([
+      biz({ image_url: shared }),
+      biz({ image_url: shared }),
+      biz({ image_url: 'https://example.com/b.png' }),
+    ]),
+    2,
+  )
+})
+
+test('distinctImageCount ignores null and empty urls', () => {
+  assert.equal(distinctImageCount([biz({ image_url: null }), biz({ image_url: '' })]), 0)
 })

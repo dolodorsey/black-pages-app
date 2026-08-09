@@ -3,13 +3,19 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import LocationInteractionHost from './LocationInteractionHost'
 import ReviewInteractionHost from './ReviewInteractionHost'
+import { ErrorBoundary } from './components/ErrorBoundary'
+import { publishBuildInfo } from './lib/build-info'
 import './styles.css'
 import './current-media.css'
 
+publishBuildInfo()
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <LocationInteractionHost/>
-    <ReviewInteractionHost/>
-    <App/>
+    <ErrorBoundary>
+      <LocationInteractionHost/>
+      <ReviewInteractionHost/>
+      <App/>
+    </ErrorBoundary>
   </StrictMode>,
 )

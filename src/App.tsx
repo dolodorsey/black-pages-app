@@ -1,20 +1,16 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeft,
   ArrowRight,
-  BadgeCheck,
   Bookmark,
   BriefcaseBusiness,
   Building2,
   Check,
   ChevronRight,
   Compass,
-  ExternalLink,
   Globe2,
   Heart,
   Home,
   Camera,
-  LocateFixed,
   LogIn,
   LogOut,
   Map as MapIcon,
@@ -24,81 +20,33 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
-  Star,
   Store,
   UserRound,
   X,
 } from 'lucide-react'
-import { createClient, type User } from '@supabase/supabase-js'
-
-type DirectoryBusiness = {
-  directory_id: string
-  source_type: 'venue' | 'listing'
-  source_id: string
-  business_name: string
-  slug: string
-  category: string
-  subcategory: string | null
-  city: string
-  state: string
-  neighborhood: string | null
-  address: string | null
-  short_description: string | null
-  website_url: string | null
-  instagram_handle: string | null
-  phone: string | null
-  image_url: string | null
-  latitude: number | null
-  longitude: number | null
-  rating: number | null
-  review_count: number | null
-  price_range: string | null
-  featured: boolean
-  ownership_status: string
-  owner_verified: boolean
-  tags: string[] | null
-}
+import type { User } from '@supabase/supabase-js'
+import { BuildInfoBadge } from './components/BuildInfoBadge'
+import { BusinessCard } from './components/BusinessCard'
+import { CategoryFilterRail, CategoryRail, DirectorySearch, FloatingSearch } from './components/DirectoryControls'
+import { MapPanel } from './components/MapPanel'
+import { AppMark, EmptyState, Rating, StatusBadge } from './components/primitives'
+import { labelCategory, listingCategories } from './lib/categories'
+import { mapsUrl } from './lib/maps'
+import { getAppEnv, getSupabaseClient } from './lib/supabase'
+import {
+  addFavorite,
+  countByCategory,
+  featuredBusinesses,
+  fetchDirectory,
+  fetchSavedDirectoryIds,
+  filterDirectory,
+  mapReadyBusinesses,
+  removeFavorite,
+  submitOwnerClaim,
+  type DirectoryBusiness,
+} from './services/directory'
 
 type Tab = 'home' | 'discover' | 'map' | 'saved' | 'profile'
-
-const supabaseUrl = 'https://dzlmtvodpyhetvektfuo.supabase.co'
-const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
-const supabase = supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
-
-const categoryLabels: Record<string, string> = {
-  restaurant: 'Restaurants',
-  nightclub: 'Nightlife',
-  brunch: 'Brunch',
-  lounge: 'Lounges',
-  hookah: 'Hookah',
-  coffee: 'Coffee',
-  culture: 'Arts & Culture',
-  nightlife: 'Nightlife',
-  beauty: 'Beauty',
-  shopping: 'Shopping',
-  fitness: 'Fitness',
-  food_truck: 'Food Trucks',
-  bar: 'Bars',
-  comedy: 'Comedy',
-  jazz: 'Jazz',
-  spa: 'Spa',
-  wellness: 'Wellness',
-  special_events: 'Events',
-  day_party: 'Day Parties',
-}
-
-const listingCategories = [
-  'Food & Beverage',
-  'Beauty & Wellness',
-  'Professional Services',
-  'Retail',
-  'Arts & Culture',
-  'Home Services',
-  'Technology',
-  'Automotive',
-  'Health',
-  'Education',
-]
 
 const emptyApplication = {
   businessName: '',
@@ -114,62 +62,12 @@ const emptyApplication = {
   ownershipCertification: false,
 }
 
-function labelCategory(value: string) {
-  return categoryLabels[value] || value.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
-}
-
-function mapsUrl(business: DirectoryBusiness) {
-  if (business.latitude != null && business.longitude != null) {
-    return `https://www.google.com/maps/search/?api=1&query=${business.latitude},${business.longitude}`
-  }
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${business.business_name} ${business.address || business.city}`)}`
-}
-
-function AppMark() {
-  return <div className="app-mark"><span>TBP</span></div>
-}
-
-function StatusBadge({ business }: { business: DirectoryBusiness }) {
-  return business.owner_verified
-    ? <span className="status-badge owner"><ShieldCheck size={12} /> Owner verified</span>
-    : <span className="status-badge"><BadgeCheck size={12} /> Black-owned profile</span>
-}
-
-function Rating({ business }: { business: DirectoryBusiness }) {
-  if (!business.rating) return <span className="rating quiet">New profile</span>
-  return <span className="rating"><Star size={12} fill="currentColor" /> {Number(business.rating).toFixed(1)}{business.review_count ? <small>({business.review_count})</small> : null}</span>
-}
-
-function BusinessCard({ business, saved, onOpen, onSave, compact = false }: {
-  business: DirectoryBusiness
-  saved: boolean
-  onOpen: () => void
-  onSave: () => void
-  compact?: boolean
-}) {
-  return <article className={`business-card ${compact ? 'compact' : ''}`} onClick={onOpen}>
-    <div className="business-image">
-      {business.image_url ? <img src={business.image_url} alt="" loading="lazy" /> : <div className="image-fallback"><Store /></div>}
-      <div className="image-shade" />
-      <button className={`save-button ${saved ? 'saved' : ''}`} aria-label={saved ? 'Remove from saved' : 'Save business'} onClick={event => { event.stopPropagation(); onSave() }}>
-        <Bookmark size={17} fill={saved ? 'currentColor' : 'none'} />
-      </button>
-      <StatusBadge business={business} />
-    </div>
-    <div className="business-copy">
-      <div className="card-meta"><span>{labelCategory(business.category)}</span><Rating business={business} /></div>
-      <h3>{business.business_name}</h3>
-      <p>{business.short_description || `${labelCategory(business.category)} in ${business.neighborhood || business.city}.`}</p>
-      <div className="location-line"><MapPin size={13} /> {business.neighborhood ? `${business.neighborhood}, ` : ''}{business.city}</div>
-    </div>
-  </article>
-}
-
-function EmptyState({ icon, title, body, action }: { icon: React.ReactNode; title: string; body: string; action?: React.ReactNode }) {
-  return <div className="empty-state">{icon}<h3>{title}</h3><p>{body}</p>{action}</div>
-}
-
 export default function App() {
+  // Throws when the public environment is missing or malformed; ErrorBoundary
+  // renders the explanation instead of a blank page.
+  const supabase = useMemo(() => getSupabaseClient(), [])
+  const supabaseUrl = useMemo(() => getAppEnv().supabaseUrl, [])
+
   const [businesses, setBusinesses] = useState<DirectoryBusiness[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -202,30 +100,24 @@ export default function App() {
   useEffect(() => {
     let active = true
     ;(async () => {
-      if (!supabase) {
-        setError('The directory connection is not configured for this release.')
-        setLoading(false)
-        return
-      }
-      const [{ data, error: directoryError }, { data: sessionData }] = await Promise.all([
-        supabase.from('black_pages_directory').select('*').order('featured', { ascending: false }).order('rating', { ascending: false, nullsFirst: false }).order('business_name'),
+      const [directory, { data: sessionData }] = await Promise.all([
+        fetchDirectory(supabase),
         supabase.auth.getSession(),
       ])
       if (!active) return
-      if (directoryError) setError('The live directory could not be loaded.')
-      else setBusinesses((data || []) as DirectoryBusiness[])
+      if (directory.error) setError(directory.error)
+      else setBusinesses(directory.businesses)
       setUser(sessionData.session?.user || null)
       setLoading(false)
     })()
-    const { data: authSubscription } = supabase?.auth.onAuthStateChange((_event, session) => setUser(session?.user || null)) || { data: null }
+    const { data: authSubscription } = supabase.auth.onAuthStateChange((_event, session) => setUser(session?.user || null))
     return () => { active = false; authSubscription?.subscription.unsubscribe() }
-  }, [])
+  }, [supabase])
 
   useEffect(() => {
-    if (!supabase || !user) { setSavedIds([]); return }
-    supabase.from('black_pages_favorites').select('directory_id').eq('user_auth_id', user.id)
-      .then(({ data }) => setSavedIds((data || []).map(item => item.directory_id)))
-  }, [user])
+    if (!user) { setSavedIds([]); return }
+    fetchSavedDirectoryIds(supabase, user.id).then(setSavedIds)
+  }, [supabase, user])
 
   useEffect(() => {
     if (!toast) return
@@ -233,37 +125,27 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [toast])
 
-  const categories = useMemo(() => {
-    const counts = new globalThis.Map<string, number>()
-    businesses.forEach(business => counts.set(business.category, (counts.get(business.category) || 0) + 1))
-    return [...counts.entries()].sort((a, b) => b[1] - a[1])
-  }, [businesses])
+  const categories = useMemo(() => countByCategory(businesses), [businesses])
+  const filtered = useMemo(() => filterDirectory(businesses, { category, query }), [businesses, category, query])
 
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    return businesses.filter(business => {
-      const categoryMatch = category === 'all' || business.category === category
-      const searchMatch = !needle || [business.business_name, business.category, business.subcategory, business.neighborhood, business.city, business.short_description, ...(business.tags || [])]
-        .filter(Boolean).join(' ').toLowerCase().includes(needle)
-      return categoryMatch && searchMatch
-    })
-  }, [businesses, category, query])
-
-  const featured = businesses.filter(business => business.featured || Number(business.rating || 0) >= 4.5).slice(0, 8)
+  const featured = featuredBusinesses(businesses)
   const hero = featured[0] || businesses[0]
-  const mapReady = filtered.filter(business => business.latitude != null && business.longitude != null)
+  const mapReady = mapReadyBusinesses(filtered)
   const savedBusinesses = businesses.filter(business => savedIds.includes(business.directory_id))
+  // Never invent a total: show the real published count, or nothing at all.
+  const directoryCount = businesses.length
+  const exploreLabel = directoryCount > 0 ? `Explore ${directoryCount} businesses` : 'Explore the directory'
 
   async function toggleFavorite(directoryId: string) {
-    if (!supabase || !user) { setAuthOpen(true); setToast('Sign in to save businesses.'); return }
+    if (!user) { setAuthOpen(true); setToast('Sign in to save businesses.'); return }
     const currentlySaved = savedIds.includes(directoryId)
     setSavedIds(current => currentlySaved ? current.filter(id => id !== directoryId) : [...current, directoryId])
     if (currentlySaved) {
-      const { error: favoriteError } = await supabase.from('black_pages_favorites').delete().eq('user_auth_id', user.id).eq('directory_id', directoryId)
+      const { error: favoriteError } = await removeFavorite(supabase, user.id, directoryId)
       if (favoriteError) setSavedIds(current => [...current, directoryId])
       else setToast('Removed from saved.')
     } else {
-      const { error: favoriteError } = await supabase.from('black_pages_favorites').insert({ user_auth_id: user.id, directory_id: directoryId })
+      const { error: favoriteError } = await addFavorite(supabase, user.id, directoryId)
       if (favoriteError) setSavedIds(current => current.filter(id => id !== directoryId))
       else setToast('Saved to your Black Pages.')
     }
@@ -271,7 +153,7 @@ export default function App() {
 
   async function authenticate(event: FormEvent) {
     event.preventDefault()
-    if (!supabase || authBusy) return
+    if (authBusy) return
     setAuthBusy(true); setAuthError('')
     const result = authMode === 'signin'
       ? await supabase.auth.signInWithPassword({ email: authEmail.trim(), password: authPassword })
@@ -306,18 +188,18 @@ export default function App() {
 
   async function submitClaim(event: FormEvent) {
     event.preventDefault()
-    if (!supabase || !selected) return
+    if (!selected) return
     if (!user) { setClaimOpen(false); setAuthOpen(true); return }
     setClaimBusy(true)
-    const { error: claimError } = await supabase.from('black_pages_claims').upsert({
-      directory_id: selected.directory_id,
-      claimant_auth_id: user.id,
-      claimant_name: claimName,
-      claimant_email: claimEmail,
-      role_at_business: claimRole,
-    }, { onConflict: 'directory_id,claimant_auth_id' })
+    const { error: claimError } = await submitOwnerClaim(supabase, {
+      directoryId: selected.directory_id,
+      claimantAuthId: user.id,
+      claimantName: claimName,
+      claimantEmail: claimEmail,
+      roleAtBusiness: claimRole,
+    })
     setClaimBusy(false)
-    if (claimError) setToast(claimError.message)
+    if (claimError) setToast(claimError)
     else setClaimSuccess(true)
   }
 
@@ -345,15 +227,16 @@ export default function App() {
             <span className="eyebrow"><Sparkles size={13} /> THE NEW DIGITAL BLACK PAGES</span>
             <h1>Every Black-owned business.<br/><em>One powerful network.</em></h1>
             <p>Search, save, support, review, and connect with Black-owned businesses around you.</p>
-            <button onClick={() => goDiscover()}><Search size={17} /> Explore {businesses.length || 135} businesses</button>
+            <button onClick={() => goDiscover()}><Search size={17} /> {exploreLabel}</button>
           </div>
         </section>
 
-        <section className="floating-search">
-          <Search size={19} />
-          <input value={query} onChange={event => setQuery(event.target.value)} onFocus={() => setTab('discover')} placeholder="What are you looking for?" />
-          <button aria-label="Use my location" onClick={() => { setTab('map'); setToast('Showing map-ready Black-owned businesses.') }}><LocateFixed size={18} /></button>
-        </section>
+        <FloatingSearch
+          query={query}
+          onQueryChange={setQuery}
+          onFocus={() => setTab('discover')}
+          onUseLocation={() => { setTab('map'); setToast('Showing map-ready Black-owned businesses.') }}
+        />
 
         <section className="stats-strip">
           <div><strong>{businesses.length}</strong><span>Black-owned profiles</span></div>
@@ -361,15 +244,7 @@ export default function App() {
           <div><strong>{businesses.filter(item => item.image_url).length}</strong><span>Visual profiles</span></div>
         </section>
 
-        <section className="section-block">
-          <div className="section-title"><div><span>EXPLORE</span><h2>Browse by category</h2></div><button onClick={() => goDiscover()}>See all <ChevronRight size={15} /></button></div>
-          <div className="category-rail">
-            {categories.slice(0, 10).map(([key, count]) => <button key={key} onClick={() => goDiscover(key)}>
-              <span className="category-icon">{key === 'restaurant' || key === 'brunch' ? '🍽' : key === 'beauty' || key === 'spa' ? '✦' : key === 'nightclub' || key === 'lounge' ? '◐' : key === 'shopping' ? '◆' : '●'}</span>
-              <strong>{labelCategory(key)}</strong><small>{count} businesses</small>
-            </button>)}
-          </div>
-        </section>
+        <CategoryRail categories={categories} onSelectCategory={goDiscover} onSeeAll={() => goDiscover()} />
 
         <section className="section-block dark-section">
           <div className="section-title"><div><span>TOP PROFILES</span><h2>Popular in Atlanta</h2></div></div>
@@ -386,24 +261,19 @@ export default function App() {
 
       {tab === 'discover' && <section className="discover-screen">
         <div className="screen-heading"><span>DIRECTORY</span><h1>Find Black-owned.</h1><p>{filtered.length} results across Atlanta</p></div>
-        <div className="directory-search"><Search size={19} /><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Business, food, beauty, service, neighborhood…" />{query && <button onClick={() => setQuery('')}><X size={17} /></button>}</div>
-        <div className="filter-rail"><button className={category === 'all' ? 'active' : ''} onClick={() => setCategory('all')}>All</button>{categories.map(([key, count]) => <button className={category === key ? 'active' : ''} key={key} onClick={() => setCategory(key)}>{labelCategory(key)} <small>{count}</small></button>)}</div>
+        <DirectorySearch query={query} onQueryChange={setQuery} />
+        <CategoryFilterRail categories={categories} category={category} onCategoryChange={setCategory} />
         {loading ? <EmptyState icon={<Sparkles />} title="Opening the directory" body="Loading the live Black business network." /> : error ? <EmptyState icon={<Building2 />} title="Directory unavailable" body={error} /> : filtered.length === 0 ? <EmptyState icon={<Search />} title="No matches yet" body="Try another category, neighborhood, or search." /> : <div className="business-grid">{filtered.map(business => <BusinessCard key={business.directory_id} business={business} saved={savedIds.includes(business.directory_id)} onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}</div>}
       </section>}
 
-      {tab === 'map' && <section className="map-screen">
-        <div className="map-canvas">
-          <iframe title="Black Pages business map" src="https://www.openstreetmap.org/export/embed.html?bbox=-84.58%2C33.62%2C-84.18%2C33.94&layer=mapnik" />
-          <div className="map-shade" />
-          <div className="map-search"><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search this area" /></div>
-          <button className="recenter"><LocateFixed size={18} /></button>
-          <div className="map-counter"><MapPin size={14} /> {mapReady.length} map-ready businesses</div>
-        </div>
-        <div className="map-results">
-          <div className="section-title"><div><span>NEAR ATLANTA</span><h2>Explore the map</h2></div></div>
-          <div className="horizontal-cards">{mapReady.slice(0, 20).map(business => <BusinessCard compact key={business.directory_id} business={business} saved={savedIds.includes(business.directory_id)} onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}</div>
-        </div>
-      </section>}
+      {tab === 'map' && <MapPanel
+        query={query}
+        onQueryChange={setQuery}
+        mapReady={mapReady}
+        savedIds={savedIds}
+        onOpen={openBusiness}
+        onSave={toggleFavorite}
+      />}
 
       {tab === 'saved' && <section className="saved-screen">
         <div className="screen-heading"><span>MY BLACK PAGES</span><h1>Saved businesses.</h1><p>Your personal Black-owned business network.</p></div>
@@ -417,7 +287,7 @@ export default function App() {
           <button onClick={() => setApplicationOpen(true)}><span><BriefcaseBusiness /><strong>List a Black-owned business</strong><small>Submit a new business for review</small></span><ChevronRight /></button>
           <button onClick={() => { setTab('discover'); setToast('Open a business profile to submit a claim.') }}><span><ShieldCheck /><strong>Claim an existing profile</strong><small>Unlock owner verification and profile controls</small></span><ChevronRight /></button>
           <button onClick={() => setTab('saved')}><span><Bookmark /><strong>Saved businesses</strong><small>{savedBusinesses.length} profiles in your Pages</small></span><ChevronRight /></button>
-          {user && <button className="danger-action" onClick={async () => { await supabase?.auth.signOut(); setTab('home'); setToast('Signed out.') }}><span><LogOut /><strong>Sign out</strong><small>{user.email}</small></span><ChevronRight /></button>}
+          {user && <button className="danger-action" onClick={async () => { await supabase.auth.signOut(); setTab('home'); setToast('Signed out.') }}><span><LogOut /><strong>Sign out</strong><small>{user.email}</small></span><ChevronRight /></button>}
         </div>
       </section>}
     </main>
@@ -461,5 +331,6 @@ export default function App() {
     {claimOpen && selected && <div className="modal-backdrop" onMouseDown={() => setClaimOpen(false)}><form className="auth-modal" onSubmit={submitClaim} onMouseDown={event => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setClaimOpen(false)}><X /></button>{claimSuccess ? <div className="success-state"><div className="success-check"><Check /></div><span>CLAIM RECEIVED</span><h2>We’ll verify your connection.</h2><p>Your profile will not change until the claim is reviewed.</p><button type="button" className="primary-action" onClick={() => { setClaimSuccess(false); setClaimOpen(false) }}>Done</button></div> : <><ShieldCheck className="modal-icon" /><span className="eyebrow">CLAIM BUSINESS PROFILE</span><h2>{selected.business_name}</h2><p>Tell us who you are. Supporting proof can be requested during review.</p><label>Your name<input required value={claimName} onChange={event => setClaimName(event.target.value)} /></label><label>Email<input required type="email" value={claimEmail} onChange={event => setClaimEmail(event.target.value)} /></label><label>Role at business<select value={claimRole} onChange={event => setClaimRole(event.target.value)}><option>Owner</option><option>Co-owner</option><option>Manager</option><option>Authorized representative</option></select></label><button className="primary-action" disabled={claimBusy}>{claimBusy ? 'Submitting…' : 'Submit claim'} <ArrowRight size={16} /></button></>}</form></div>}
 
     {toast && <div className="toast">{toast}</div>}
+    <BuildInfoBadge />
   </div>
 }

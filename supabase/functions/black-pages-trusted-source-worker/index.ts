@@ -1,0 +1,42 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import * as cheerio from "npm:cheerio@1.0.0";
+
+type Job={id:string;source_key:string;request_url:string;city:string|null;state:string|null};
+type Item={business_name:string;city:string;state:string;postal_code:string;address:string;source_category:string;source_subcategory:string;detail_url:string;website_url:string;instagram_handle:string;public_email:string;public_phone:string;description:string;source_key:string};
+const clean=(v:string)=>String(v||'').replace(/\u200b/g,'').replace(/\s+/g,' ').trim();
+const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+const abs=(href:string,base:string)=>{try{return new URL(href,base).toString()}catch{return''}};
+const slug=(v:string)=>clean(v).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,100);
+function postal(text:string){return text.match(/\b\d{5}(?:-\d{4})?\b/)?.[0]||''}
+function inferFood(text:string){const v=text.toLowerCase();if(/soul food|southern/.test(v))return'Soul Food';if(/barbecue|\bbbq\b/.test(v))return'Barbecue';if(/caribbean|jamaican/.test(v))return'Caribbean';if(/seafood/.test(v))return'Seafood';if(/vegan|plant.based/.test(v))return'Vegan';if(/bakery|dessert|cake|ice cream|creamery/.test(v))return'Bakery & Dessert';if(/coffee|cafe|tea/.test(v))return'Coffee & Tea';return'Restaurants'}
+function inferCategory(text:string){const v=text.toLowerCase();if(/restaurant|food|beverage|catering|bakery|coffee|cafe/.test(v))return'Food & Beverage';if(/real estate|realtor|property/.test(v))return'Real Estate';if(/health|wellness|medical|therapy/.test(v))return'Health & Wellness';if(/technology|software|cyber|web design|web development|it support/.test(v))return'Technology';if(/marketing|branding|advertis|public relations/.test(v))return'Marketing';if(/transport|logistics|trucking/.test(v))return'Transportation';if(/beauty|salon|barber|spa|hair/.test(v))return'Beauty';if(/retail|apparel|clothing|shop/.test(v))return'Retail';if(/training|coaching|education/.test(v))return'Education & Training';if(/consult|business service|account|tax|finance/.test(v))return'Business Services';return'Business Services'}
+function externalSite(container:cheerio.Cheerio<any>,base:string){let found='';container.find('a[href]').each((_i,a)=>{if(found)return;const href=abs(container.find(a).attr('href')||'',base);if(!href)return;try{const u=new URL(href),b=new URL(base);if(u.hostname===b.hostname||/instagram\.com|facebook\.com|linkedin\.com|youtube\.com|mailto:|tel:/i.test(href))return;if(/^https?:/.test(href))found=href}catch{}});return found}
+
+function parseByBlack(html:string,job:Job):Item[]{const $=cheerio.load(html),items:Item[]=[];const seen=new Set<string>();
+  $('h3').each((_i,node)=>{const h=$(node),name=clean(h.text());if(!name||name.length>180||/filters|black-owned businesses|why is accreditation|can.t find/i.test(name))return;
+    let card=h.parent();let text=clean(card.text());for(let d=0;d<8&&card.length&&!/certified as black-owned|\bCertified\b/i.test(text);d++){card=card.parent();text=clean(card.text());if(text.length>6500)return}
+    if(!/certified as black-owned|\bCertified\b/i.test(text))return;
+    const dedupe=name.toLowerCase()+'|'+text.slice(-180).toLowerCase();if(seen.has(dedupe))return;seen.add(dedupe);
+    let city=job.city||'Atlanta',state=job.state||'GA',address='';
+    const based=text.match(/Based in\s+([^,]+),\s*([A-Z]{2})/i);if(based){city=clean(based[1]);state=based[2].toUpperCase();address=`Based in ${city}, ${state}`}
+    const street=text.match(/(?:\d{1,6}\s+[^|]{2,100}?|[A-Za-z0-9 .'-]+)\s+(Atlanta|Lawrenceville|Decatur|Marietta|Smyrna|Stone Mountain|Morrow|Fairburn|Douglasville|Fayetteville),\s*(GA)\b/i);
+    if(street&&!based){address=clean(street[0]);city=clean(street[1]);state=street[2].toUpperCase()}
+    const categories=card.find('a').toArray().map(a=>clean($(a).text())).filter(t=>t&&t!==name&&!/certified|deliver|businesses|products|see all/i.test(t)&&t.length<70).slice(0,8);
+    const sourceCategory=inferCategory(categories.join(' ')+' '+text.slice(0,600));
+    const headingLink=h.find('a[href]').first().attr('href')||h.closest('a[href]').attr('href')||'';const detail=abs(headingLink,job.request_url)||job.request_url+'#'+slug(name);
+    const item:Item={business_name:name,city,state,postal_code:postal(address),address,source_category:sourceCategory,source_subcategory:categories.join(' | ').slice(0,120),detail_url:detail,website_url:externalSite(card,job.request_url),instagram_handle:'',public_email:'',public_phone:'',description:clean(text.replace(name,'').replace(/This business is certified as Black-owned by the U\.S\. Black Chambers\.?/ig,'')).slice(0,1000),source_key:(detail||name+'|'+address).slice(0,180)};
+    items.push(item)
+  });return items.slice(0,100)}
+
+function parseDiscoverAtlanta(html:string,job:Job):Item[]{const $=cheerio.load(html),items:Item[]=[];const seen=new Set<string>();
+  $('h2,h3').each((_i,node)=>{const h=$(node),name=clean(h.text());if(!name||name.length>180||/black-owned restaurants|traditional|favorite|more of atlanta|mary welch/i.test(name))return;
+    let text='';let cursor=h.next();let steps=0;while(cursor.length&&steps<8&&!/^H[23]$/i.test(cursor[0]?.tagName||'')){text+=' '+clean(cursor.text());cursor=cursor.next();steps++}text=clean(text);
+    const where=text.match(/Where:\s*([^|]{5,180}?)(?=$|\s(?:Read|Visit|More|Photo|Image):?)/i)||text.match(/Where:\s*(.{5,160})/i);if(!where)return;
+    const address=clean(where[1]).replace(/\s{2,}.*/,'');if(seen.has(name.toLowerCase()))return;seen.add(name.toLowerCase());
+    let website='';let scan=h.next();steps=0;while(scan.length&&steps<8&&!/^H[23]$/i.test(scan[0]?.tagName||'')){website ||= externalSite(scan,job.request_url);scan=scan.next();steps++}
+    items.push({business_name:name,city:job.city||'Atlanta',state:job.state||'GA',postal_code:postal(address),address,source_category:'Food & Beverage',source_subcategory:inferFood(text),detail_url:job.request_url+'#'+slug(name),website_url:website,instagram_handle:'',public_email:'',public_phone:'',description:text.replace(where[0],'').slice(0,1000),source_key:(job.source_key+':'+slug(name)).slice(0,180)})
+  });return items.slice(0,150)}
+function parse(html:string,job:Job){if(job.source_key==='byblack_certified_atlanta')return parseByBlack(html,job);if(job.source_key==='discover_atlanta_black_restaurants')return parseDiscoverAtlanta(html,job);return[]}
+async function process(supabase:ReturnType<typeof createClient>,job:Job){try{const r=await fetch(job.request_url,{headers:{'User-Agent':'TheBlackPagesTrustedSource/1.0 (+public Black-owned business directory indexing)','Accept':'text/html,application/xhtml+xml'},redirect:'follow',signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error(`HTTP ${r.status}`);const items=parse(await r.text(),job);const {data,error}=await supabase.rpc('black_pages_complete_external_job',{p_job_id:job.id,p_items:items,p_error:null});if(error)throw error;return{job_id:job.id,source:job.source_key,found:items.length,result:data}}catch(e){const message=e instanceof Error?e.message:'trusted_source_failed';await supabase.rpc('black_pages_complete_external_job',{p_job_id:job.id,p_items:[],p_error:message});return{job_id:job.id,source:job.source_key,error:message}}}
+Deno.serve(async request=>{if(request.method!=='POST')return json({error:'Method not allowed'},405);const url=Deno.env.get('SUPABASE_URL'),key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');if(!url||!key)return json({error:'Worker environment incomplete'},500);const supabase=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});const token=request.headers.get('x-worker-token')||'';const {data:ok}=await supabase.rpc('black_pages_authorize_worker_token',{p_token:token});if(ok!==true)return json({error:'Unauthorized'},401);let body:{jobs?:number}={};try{body=await request.json()}catch{}const {data:claim,error}=await supabase.rpc('black_pages_claim_trusted_source_jobs',{p_limit:Math.min(20,Math.max(1,Number(body.jobs)||8))});if(error)return json({error:error.message},500);const jobs=Array.isArray(claim?.jobs)?claim.jobs as Job[]:[];const settled=await Promise.allSettled(jobs.map(j=>process(supabase,j)));return json({ok:true,claimed:jobs.length,processed:settled.length,outcomes:settled.map(x=>x.status==='fulfilled'?x.value:{error:String(x.reason)})})});

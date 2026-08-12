@@ -78,4 +78,10 @@ end; $$;
 revoke all on function public.black_pages_research_burst(integer,integer) from public,anon,authenticated;
 grant execute on function public.black_pages_research_burst(integer,integer) to service_role;
 
+do $block$
+declare r record;
+begin
+  for r in select jobid from cron.job where jobname in ('black-pages-bulk-internal-ingest','black-pages-internal-source-refresh')
+  loop perform cron.unschedule(r.jobid); end loop;
+end $block$;
 select cron.schedule('black-pages-internal-source-refresh','17 * * * *',$$select public.black_pages_seed_internal_business_sources(5000);$$);

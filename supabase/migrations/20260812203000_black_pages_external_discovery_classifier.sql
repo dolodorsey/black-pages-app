@@ -38,11 +38,10 @@ insert into public.black_pages_taxonomy_aliases(alias,category_slug,subcategory_
 ('marketing','marketing-advertising','marketing-agencies',.97),('video','creative-media','video-production',.92),('video production','creative-media','video-production',.99),
 ('photography','arts-culture','photography-studios',.94),('primary care physicians','health','primary-care',.99),('primary care','health','primary-care',.99),
 ('home care','health','home-care',.99),('non profit','community','nonprofits',.93),('nonprofit','community','nonprofits',.93),
-('construction','construction-trades','general-contractors',.94),('logistics','logistics-transportation','logistics-companies',.94),('trucking','logistics-transportation','trucking-companies',.98),
-('education','education','adult-education',.80),('authors','arts-culture','publishing',.84),('cosmetics','beauty-wellness','cosmetic-retailers',.91)
+('construction','construction-trades','general-contractors',.94),('logistics','logistics-transportation','logistics-consultants',.82),('trucking','logistics-transportation','trucking-companies',.98),
+('education','education','adult-education',.80),('authors','creative-media','publishers',.84),('cosmetics','beauty-wellness','cosmetic-retailers',.91)
 on conflict(alias) do update set category_slug=excluded.category_slug,subcategory_slug=excluded.subcategory_slug,confidence=excluded.confidence,active=true;
 
--- Recover raw categories from the internal directory source before classifying.
 update public.black_pages_candidate_queue q
 set source_category=d.category,
     source_address=coalesce(q.source_address,d.address),
@@ -57,7 +56,6 @@ returns jsonb
 language plpgsql security definer set search_path='pg_catalog','public','extensions' as $$
 declare v_limit integer:=least(20000,greatest(1,coalesce(p_limit,10000))); v_exact integer:=0; v_fuzzy integer:=0;
 begin
-  -- Exact/contains aliases, favoring source subcategory then source category then business name.
   with targets as (
     select q.id,
       lower(concat_ws(' ',q.source_subcategory,q.source_category,q.category,q.business_name)) haystack,
@@ -80,7 +78,6 @@ begin
     from matches m where q.id=m.id returning q.id
   ) select count(*)::int into v_exact from upd;
 
-  -- Fuzzy fallback only when a canonical category exists and similarity is meaningful.
   with targets as (
     select q.id,public.black_pages_canonical_category(q.category) category_slug,
       lower(concat_ws(' ',q.source_subcategory,q.source_category,q.business_name)) hint
@@ -261,5 +258,4 @@ end; $$;
 revoke all on function public.black_pages_staff_find_now(text,text[],integer) from public,anon;
 grant execute on function public.black_pages_staff_find_now(text,text[],integer) to authenticated;
 
--- Classify the current pool immediately.
 select public.black_pages_auto_classify_batch(20000);

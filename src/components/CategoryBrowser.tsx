@@ -1,4 +1,4 @@
-import { ChevronRight, Layers3 } from 'lucide-react'
+import { ChevronRight, Grid2X2, Search } from 'lucide-react'
 import { labelCategory, labelSubcategory, pluralize } from '../lib/categories'
 import {
   countBySubcategory,
@@ -8,26 +8,29 @@ import {
 } from '../services/directory'
 
 function categoryGlyph(key: string) {
-  if (key === 'restaurant' || key === 'brunch' || key === 'food_truck') return '🍽'
-  if (key === 'beauty' || key === 'spa' || key === 'wellness') return '✦'
-  if (key === 'nightclub' || key === 'nightlife' || key === 'lounge' || key === 'hookah') return '◐'
-  if (key === 'shopping') return '◆'
-  if (key === 'culture' || key === 'jazz' || key === 'comedy') return '◈'
-  if (key === 'fitness') return '▲'
+  const value = key.toLowerCase()
+  if (value.includes('restaurant') || value.includes('brunch') || value.includes('food')) return '🍽'
+  if (value.includes('beauty') || value.includes('spa') || value.includes('wellness')) return '✦'
+  if (value.includes('nightclub') || value.includes('lounge') || value.includes('bar')) return '◐'
+  if (value.includes('shop') || value.includes('retail')) return '◆'
+  if (value.includes('culture') || value.includes('jazz') || value.includes('comedy')) return '◈'
+  if (value.includes('fitness')) return '▲'
+  if (value.includes('business') || value.includes('professional')) return '▣'
   return '●'
 }
 
-/** Dedicated category directory with all live subcategories nested beneath each category. */
+/** Full business-category index with nested subcategories. */
 export function CategoryBrowser({ businesses, categories, onBrowse }: {
   businesses: readonly DirectoryBusiness[]
   categories: readonly CategoryCount[]
   onBrowse: (category: string, subcategory?: string) => void
 }) {
-  return <section className="categories-screen">
-    <div className="screen-heading categories-heading">
-      <span><Layers3 size={13} /> CATEGORIES</span>
-      <h1>Browse everything.</h1>
-      <p>Choose a category, then drill into the exact type of Black-owned business you need.</p>
+  return <section className="categories-screen directory-page">
+    <div className="directory-page-heading">
+      <span><Grid2X2 size={14} /> BUSINESS CATEGORIES</span>
+      <h1>Browse by category.</h1>
+      <p>Start broad, then narrow to the exact business type you need.</p>
+      <button className="directory-heading-action" onClick={() => onBrowse('all', 'all')}><Search size={16} /> Search all businesses</button>
     </div>
 
     <div className="category-directory-list">
@@ -38,9 +41,9 @@ export function CategoryBrowser({ businesses, categories, onBrowse }: {
             <span className="category-directory-icon">{categoryGlyph(key)}</span>
             <span className="category-directory-copy">
               <strong>{labelCategory(key)}</strong>
-              <small>{pluralize(count, 'business', 'businesses')} · {pluralize(subcategories.length, 'subcategory', 'subcategories')}</small>
+              <small>{pluralize(count, 'business', 'businesses')}</small>
             </span>
-            <ChevronRight size={19} />
+            <span className="category-view-all">View all <ChevronRight size={17} /></span>
           </button>
 
           {subcategories.length > 0 && <div className="subcategory-grid" aria-label={`${labelCategory(key)} subcategories`}>
@@ -55,14 +58,13 @@ export function CategoryBrowser({ businesses, categories, onBrowse }: {
   </section>
 }
 
-/** Secondary discover filter shown after a parent category is selected. */
 export function SubcategoryFilterRail({ subcategories, subcategory, onSubcategoryChange }: {
   subcategories: readonly SubcategoryCount[]
   subcategory: string
   onSubcategoryChange: (value: string) => void
 }) {
   if (subcategories.length === 0) return null
-  return <div className="filter-rail subcategory-filter-rail" aria-label="Subcategory filter">
+  return <div className="filter-rail subcategory-filter-rail" aria-label="Business type filter">
     <button className={subcategory === 'all' ? 'active' : ''} onClick={() => onSubcategoryChange('all')}>All types</button>
     {subcategories.map(([key, count]) => <button className={subcategory === key ? 'active' : ''} key={key} onClick={() => onSubcategoryChange(key)}>
       {labelSubcategory(key)} <small>{count}</small>

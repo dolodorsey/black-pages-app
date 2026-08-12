@@ -6,31 +6,29 @@ import {
   Building2,
   Check,
   ChevronRight,
-  Compass,
-  Globe2,
+  Grid2X2,
   Heart,
   Home,
-  Camera,
-  Layers3,
+  ListOrdered,
   LogIn,
   LogOut,
-  Map as MapIcon,
   MapPin,
   Navigation,
   Phone,
+  Plus,
   Search,
   ShieldCheck,
-  Sparkles,
   Store,
   UserRound,
   X,
+  Globe2,
+  Camera,
 } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 import { BuildInfoBadge } from './components/BuildInfoBadge'
 import { BusinessCard } from './components/BusinessCard'
 import { CategoryBrowser, SubcategoryFilterRail } from './components/CategoryBrowser'
-import { CategoryFilterRail, CategoryRail, DirectorySearch, FloatingSearch } from './components/DirectoryControls'
-import { MapPanel } from './components/MapPanel'
+import { CategoryFilterRail, CategoryRail, DirectorySearchPanel } from './components/DirectoryControls'
 import { AppMark, EmptyState, Rating, StatusBadge } from './components/primitives'
 import { labelCategory, labelSubcategory, listingCategories, pluralize } from './lib/categories'
 import { mapsUrl } from './lib/maps'
@@ -43,14 +41,13 @@ import {
   fetchDirectory,
   fetchSavedDirectoryIds,
   filterDirectory,
-  mapReadyBusinesses,
   removeFavorite,
-  singleCity,
   submitOwnerClaim,
   type DirectoryBusiness,
+  type DirectorySort,
 } from './services/directory'
 
-type Tab = 'home' | 'discover' | 'categories' | 'map' | 'saved' | 'profile'
+type Tab = 'home' | 'directory' | 'categories' | 'saved' | 'account'
 
 const emptyApplication = {
   businessName: '',
@@ -67,8 +64,6 @@ const emptyApplication = {
 }
 
 export default function App() {
-  // Throws when the public environment is missing or malformed; ErrorBoundary
-  // renders the explanation instead of a blank page.
   const supabase = useMemo(() => getSupabaseClient(), [])
   const supabaseUrl = useMemo(() => getAppEnv().supabaseUrl, [])
 
@@ -77,8 +72,10 @@ export default function App() {
   const [error, setError] = useState('')
   const [tab, setTab] = useState<Tab>('home')
   const [query, setQuery] = useState('')
+  const [location, setLocation] = useState('')
   const [category, setCategory] = useState('all')
   const [subcategory, setSubcategory] = useState('all')
+  const [sort, setSort] = useState<DirectorySort>('recommended')
   const [selected, setSelected] = useState<DirectoryBusiness | null>(null)
   const [savedIds, setSavedIds] = useState<string[]>([])
   const [user, setUser] = useState<User | null>(null)
@@ -133,25 +130,13 @@ export default function App() {
   const categories = useMemo(() => countByCategory(businesses), [businesses])
   const subcategories = useMemo(() => countBySubcategory(businesses, category), [businesses, category])
   const filtered = useMemo(
-    () => filterDirectory(businesses, { category, subcategory, query }),
-    [businesses, category, subcategory, query],
+    () => filterDirectory(businesses, { category, subcategory, query, location, sort }),
+    [businesses, category, subcategory, query, location, sort],
   )
-
-  const featured = featuredBusinesses(businesses)
-  const hero = featured[0] || businesses[0]
-  const mapReady = mapReadyBusinesses(filtered)
-  // Stat tiles must describe the real set, not flatter it. "On the map" counts
-  // listings we can actually plot; the previous "Visual profiles" tile counted
-  // listings with any image, which overstated a small pool of reused stock art.
-  const mapReadyCount = mapReadyBusinesses(businesses).length
-  const featuredRail = featured.length ? featured : businesses
-  const featuredCity = singleCity(featuredRail.slice(0, 8))
-  // Only name a city the filtered results actually share.
-  const discoverCity = singleCity(filtered)
+  const featured = useMemo(() => featuredBusinesses(businesses), [businesses])
+  const featuredRail = featured.length ? featured : businesses.slice(0, 8)
   const savedBusinesses = businesses.filter(business => savedIds.includes(business.directory_id))
-  // Never invent a total: show the real published count, or nothing at all.
-  const directoryCount = businesses.length
-  const exploreLabel = directoryCount > 0 ? `Explore ${pluralize(directoryCount, 'business', 'businesses')}` : 'Explore the directory'
+  const cityCount = new Set(businesses.map(item => item.city.trim()).filter(Boolean)).size
 
   async function toggleFavorite(directoryId: string) {
     if (!user) { setAuthOpen(true); setToast('Sign in to save businesses.'); return }
@@ -160,11 +145,11 @@ export default function App() {
     if (currentlySaved) {
       const { error: favoriteError } = await removeFavorite(supabase, user.id, directoryId)
       if (favoriteError) setSavedIds(current => [...current, directoryId])
-      else setToast('Removed from saved.')
+      else setToast('Removed from saved businesses.')
     } else {
       const { error: favoriteError } = await addFavorite(supabase, user.id, directoryId)
       if (favoriteError) setSavedIds(current => current.filter(id => id !== directoryId))
-      else setToast('Saved to your Black Pages.')
+      else setToast('Business saved.')
     }
   }
 
@@ -178,7 +163,7 @@ export default function App() {
     if (result.error) setAuthError(result.error.message)
     else {
       setAuthOpen(false)
-      setToast(authMode === 'signin' ? 'Welcome back.' : result.data.session ? 'Account created.' : 'Check your email to confirm your account.')
+      setToast(authMode === 'signin' ? 'Signed in.' : result.data.session ? 'Account created.' : 'Check your email to confirm your account.')
     }
     setAuthBusy(false)
   }
@@ -193,11 +178,11 @@ export default function App() {
         body: JSON.stringify(application),
       })
       const body = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(body.error || 'Application could not be submitted.')
+      if (!response.ok) throw new Error(body.error || 'Business could not be submitted.')
       setApplicationSuccess(true)
       setApplication(emptyApplication)
     } catch (submissionError) {
-      setApplicationError(submissionError instanceof Error ? submissionError.message : 'Application could not be submitted.')
+      setApplicationError(submissionError instanceof Error ? submissionError.message : 'Business could not be submitted.')
     } finally {
       setApplicationBusy(false)
     }
@@ -224,133 +209,189 @@ export default function App() {
     setSelected(business)
   }
 
-  function goDiscover(nextCategory = 'all', nextSubcategory = 'all') {
+  function openDirectory(nextCategory = 'all', nextSubcategory = 'all', nextSort: DirectorySort = sort) {
     setCategory(nextCategory)
     setSubcategory(nextSubcategory)
-    setTab('discover')
+    setSort(nextSort)
+    setTab('directory')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  function resetDirectory() {
+    setQuery('')
+    setLocation('')
+    setCategory('all')
+    setSubcategory('all')
+    setSort('recommended')
+  }
+
   return <div className="app-shell">
-    <header className="topbar">
-      <button className="brand-button" onClick={() => setTab('home')}><AppMark /><span><strong>THE BLACK PAGES</strong><small>Digital Black business network</small></span></button>
-      <button className="avatar-button" onClick={() => user ? setTab('profile') : setAuthOpen(true)}>{user ? (user.user_metadata?.full_name?.[0] || user.email?.[0] || 'U').toUpperCase() : <UserRound size={18} />}</button>
+    <header className="topbar directory-topbar">
+      <button className="brand-button" onClick={() => setTab('home')}>
+        <img className="topbar-logo" src="/brand/black-pages-logo.webp" alt="" />
+        <span><strong>THE BLACK PAGES</strong><small>Black-owned business directory</small></span>
+      </button>
+      <button className="avatar-button" aria-label="Account" onClick={() => user ? setTab('account') : setAuthOpen(true)}>
+        {user ? (user.user_metadata?.full_name?.[0] || user.email?.[0] || 'U').toUpperCase() : <UserRound size={18} />}
+      </button>
     </header>
 
-    <main className="app-content">
+    <main className="app-content directory-app-content">
       {tab === 'home' && <>
-        <section className="home-hero" style={hero?.image_url ? { backgroundImage: `url(${hero.image_url})` } : undefined}>
-          <div className="hero-overlay" />
-          <div className="hero-content">
-            <span className="eyebrow"><Sparkles size={13} /> THE NEW DIGITAL BLACK PAGES</span>
-            <h1>Every Black-owned business.<br/><em>One powerful network.</em></h1>
-            <p>Search, save, support, review, and connect with Black-owned businesses around you.</p>
-            <button onClick={() => goDiscover()}><Search size={17} /> {exploreLabel}</button>
+        <section className="directory-hero">
+          <div className="directory-hero-shade" />
+          <div className="directory-hero-content">
+            <img src="/brand/black-pages-logo.webp" className="hero-brand-logo" alt="The Black Pages" />
+            <span className="hero-kicker">THE BLACK-OWNED BUSINESS DIRECTORY</span>
+            <h1>Find the business you need.</h1>
+            <p>Search Black-owned businesses by name, service, category, city, or neighborhood.</p>
           </div>
         </section>
 
-        <FloatingSearch
-          query={query}
-          onQueryChange={setQuery}
-          onFocus={() => setTab('discover')}
-          onUseLocation={() => { setTab('map'); setToast('Showing map-ready Black-owned businesses.') }}
-        />
+        <div className="home-search-wrap">
+          <DirectorySearchPanel
+            query={query}
+            location={location}
+            onQueryChange={setQuery}
+            onLocationChange={setLocation}
+            onSubmit={() => openDirectory(category, subcategory)}
+          />
+        </div>
 
-        <section className="stats-strip">
-          <div><strong>{businesses.length}</strong><span>Black-owned profiles</span></div>
+        <section className="directory-quick-actions" aria-label="Directory shortcuts">
+          <button onClick={() => setTab('categories')}><Grid2X2 /><span><strong>Categories</strong><small>Browse business types</small></span><ChevronRight /></button>
+          <button onClick={() => openDirectory('all', 'all', 'az')}><ListOrdered /><span><strong>A–Z Directory</strong><small>Browse every business</small></span><ChevronRight /></button>
+          <button onClick={() => setApplicationOpen(true)}><Plus /><span><strong>Add a Business</strong><small>Submit a Black-owned business</small></span><ChevronRight /></button>
+          <button onClick={() => { setTab('directory'); setToast('Open a business profile to claim it.') }}><ShieldCheck /><span><strong>Claim a Business</strong><small>Manage an existing listing</small></span><ChevronRight /></button>
+        </section>
+
+        <section className="directory-stats" aria-label="Directory totals">
+          <div><strong>{businesses.length}</strong><span>Businesses</span></div>
           <div><strong>{categories.length}</strong><span>Categories</span></div>
-          <div><strong>{mapReadyCount}</strong><span>On the map</span></div>
+          <div><strong>{cityCount}</strong><span>Cities</span></div>
         </section>
 
-        <CategoryRail categories={categories} onSelectCategory={goDiscover} onSeeAll={() => setTab('categories')} />
+        <CategoryRail categories={categories} onSelectCategory={value => openDirectory(value, 'all')} onSeeAll={() => setTab('categories')} />
 
-        <section className="section-block dark-section">
-          <div className="section-title"><div><span>TOP PROFILES</span><h2>{featuredCity ? `Popular in ${featuredCity}` : 'Popular right now'}</h2></div></div>
+        <section className="section-block featured-businesses-section">
+          <div className="section-title">
+            <div><span>DIRECTORY PICKS</span><h2>Featured businesses</h2><p>Business profiles worth knowing.</p></div>
+            <button onClick={() => openDirectory()}>Full directory <ChevronRight size={15} /></button>
+          </div>
           <div className="horizontal-cards">
-            {featuredRail.slice(0, 8).map(business => <BusinessCard compact key={business.directory_id} business={business} saved={savedIds.includes(business.directory_id)} onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}
+            {featuredRail.map(business => <BusinessCard compact key={business.directory_id} business={business} saved={savedIds.includes(business.directory_id)} onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}
           </div>
         </section>
 
-        <section className="network-banner">
-          <div><span>FOR BUSINESS OWNERS</span><h2>Own your profile.<br/>Grow your reach.</h2><p>Claim an existing page or submit a new Black-owned business for review.</p></div>
-          <button onClick={() => setApplicationOpen(true)}>Add your business <ArrowRight size={16} /></button>
+        <section className="business-owner-banner">
+          <div className="business-owner-banner-copy">
+            <span>BUSINESS OWNERS</span>
+            <h2>Make sure customers can find you.</h2>
+            <p>Add your Black-owned business or claim an existing listing to keep its information accurate.</p>
+          </div>
+          <div className="business-owner-banner-actions">
+            <button onClick={() => setApplicationOpen(true)}><Plus size={16} /> Add business</button>
+            <button className="secondary" onClick={() => { setTab('directory'); setToast('Open your business profile and tap Claim this business.') }}><ShieldCheck size={16} /> Claim listing</button>
+          </div>
         </section>
       </>}
 
-      {tab === 'discover' && <section className="discover-screen">
-        <div className="screen-heading"><span>DIRECTORY</span><h1>Find Black-owned.</h1><p>{pluralize(filtered.length, 'result')}{discoverCity ? ` across ${discoverCity}` : ''}</p></div>
-        <DirectorySearch query={query} onQueryChange={setQuery} />
+      {tab === 'directory' && <section className="directory-page directory-results-page">
+        <div className="directory-page-heading">
+          <span><Search size={14} /> BUSINESS DIRECTORY</span>
+          <h1>Find Black-owned businesses.</h1>
+          <p>Search by business or service, then narrow by location and category.</p>
+        </div>
+
+        <DirectorySearchPanel
+          compact
+          query={query}
+          location={location}
+          onQueryChange={setQuery}
+          onLocationChange={setLocation}
+          onSubmit={() => undefined}
+        />
+
         <CategoryFilterRail categories={categories} category={category} onCategoryChange={value => { setCategory(value); setSubcategory('all') }} />
         {category !== 'all' && <SubcategoryFilterRail subcategories={subcategories} subcategory={subcategory} onSubcategoryChange={setSubcategory} />}
-        {loading ? <EmptyState icon={<Sparkles />} title="Opening the directory" body="Loading the live Black business network." /> : error ? <EmptyState icon={<Building2 />} title="Directory unavailable" body={error} /> : filtered.length === 0 ? <EmptyState icon={<Search />} title="No matches yet" body="Try another category, subcategory, neighborhood, or search." /> : <div className="business-grid">{filtered.map(business => <BusinessCard key={business.directory_id} business={business} saved={savedIds.includes(business.directory_id)} onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}</div>}
+
+        <div className="directory-result-tools">
+          <div><strong>{pluralize(filtered.length, 'business', 'businesses')}</strong><small>{query || location || category !== 'all' ? ' matching your search' : ' in the directory'}</small></div>
+          <div className="directory-sort" aria-label="Sort businesses">
+            <button className={sort === 'recommended' ? 'active' : ''} onClick={() => setSort('recommended')}>Recommended</button>
+            <button className={sort === 'az' ? 'active' : ''} onClick={() => setSort('az')}>A–Z</button>
+          </div>
+        </div>
+
+        {loading ? <EmptyState icon={<Store />} title="Opening the directory" body="Loading Black-owned businesses." />
+          : error ? <EmptyState icon={<Building2 />} title="Directory unavailable" body={error} />
+          : filtered.length === 0 ? <EmptyState icon={<Search />} title="No businesses found" body="Try another business name, service, location, category, or subcategory." action={<button className="primary-action" onClick={resetDirectory}>Clear filters</button>} />
+          : <div className="business-grid directory-business-grid">{filtered.map(business => <BusinessCard key={business.directory_id} business={business} saved={savedIds.includes(business.directory_id)} onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}</div>}
       </section>}
 
-      {tab === 'categories' && <CategoryBrowser businesses={businesses} categories={categories} onBrowse={goDiscover} />}
+      {tab === 'categories' && <CategoryBrowser businesses={businesses} categories={categories} onBrowse={(nextCategory, nextSubcategory = 'all') => openDirectory(nextCategory, nextSubcategory)} />}
 
-      {tab === 'map' && <MapPanel
-        query={query}
-        onQueryChange={setQuery}
-        mapReady={mapReady}
-        savedIds={savedIds}
-        onOpen={openBusiness}
-        onSave={toggleFavorite}
-      />}
-
-      {tab === 'saved' && <section className="saved-screen">
-        <div className="screen-heading"><span>MY BLACK PAGES</span><h1>Saved businesses.</h1><p>Your personal Black-owned business network.</p></div>
-        {!user ? <EmptyState icon={<Bookmark />} title="Sign in to build your Pages" body="Save businesses, submit reviews, and claim business profiles." action={<button className="primary-action" onClick={() => setAuthOpen(true)}>Sign in <LogIn size={16} /></button>} /> : savedBusinesses.length === 0 ? <EmptyState icon={<Heart />} title="Nothing saved yet" body="Tap the bookmark on any business to build your personal directory." action={<button className="primary-action" onClick={() => goDiscover()}>Explore businesses <ArrowRight size={16} /></button>} /> : <div className="business-grid">{savedBusinesses.map(business => <BusinessCard key={business.directory_id} business={business} saved onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}</div>}
+      {tab === 'saved' && <section className="directory-page saved-screen">
+        <div className="directory-page-heading"><span><Bookmark size={14} /> SAVED BUSINESSES</span><h1>Your saved directory.</h1><p>Keep the businesses you want to find again in one place.</p></div>
+        {!user ? <EmptyState icon={<Bookmark />} title="Sign in to save businesses" body="Create a personal list of Black-owned businesses you use or want to support." action={<button className="primary-action" onClick={() => setAuthOpen(true)}>Sign in <LogIn size={16} /></button>} />
+          : savedBusinesses.length === 0 ? <EmptyState icon={<Heart />} title="No saved businesses yet" body="Save any business from the directory and it will appear here." action={<button className="primary-action" onClick={() => openDirectory()}>Browse directory <ArrowRight size={16} /></button>} />
+          : <div className="business-grid directory-business-grid">{savedBusinesses.map(business => <BusinessCard key={business.directory_id} business={business} saved onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}</div>}
       </section>}
 
-      {tab === 'profile' && <section className="profile-screen">
-        <div className="profile-hero"><AppMark /><span>YOUR NETWORK</span><h1>{user ? user.user_metadata?.full_name || user.email : 'Join The Black Pages'}</h1><p>{user ? 'Save businesses, claim profiles, and help strengthen the directory.' : 'Create an account to personalize your Black business network.'}</p></div>
-        <div className="profile-actions">
-          {!user && <button onClick={() => setAuthOpen(true)}><span><LogIn /><strong>Sign in or create account</strong><small>Save, review, and claim profiles</small></span><ChevronRight /></button>}
-          <button onClick={() => setApplicationOpen(true)}><span><BriefcaseBusiness /><strong>List a Black-owned business</strong><small>Submit a new business for review</small></span><ChevronRight /></button>
-          <button onClick={() => { setTab('discover'); setToast('Open a business profile to submit a claim.') }}><span><ShieldCheck /><strong>Claim an existing profile</strong><small>Unlock owner verification and profile controls</small></span><ChevronRight /></button>
-          <button onClick={() => setTab('saved')}><span><Bookmark /><strong>Saved businesses</strong><small>{savedBusinesses.length} profiles in your Pages</small></span><ChevronRight /></button>
+      {tab === 'account' && <section className="directory-page account-screen">
+        <div className="account-card">
+          <img src="/brand/black-pages-logo.webp" alt="" />
+          <span>MY BLACK PAGES</span>
+          <h1>{user ? user.user_metadata?.full_name || user.email : 'Directory account'}</h1>
+          <p>{user ? 'Manage saved businesses and business listing actions.' : 'Sign in to save businesses and submit ownership claims.'}</p>
+        </div>
+        <div className="profile-actions directory-account-actions">
+          {!user && <button onClick={() => setAuthOpen(true)}><span><LogIn /><strong>Sign in or create account</strong><small>Save and claim business listings</small></span><ChevronRight /></button>}
+          <button onClick={() => setApplicationOpen(true)}><span><BriefcaseBusiness /><strong>Add a Black-owned business</strong><small>Submit a business for directory review</small></span><ChevronRight /></button>
+          <button onClick={() => { setTab('directory'); setToast('Open the business profile you want to claim.') }}><span><ShieldCheck /><strong>Claim a business listing</strong><small>Request ownership of an existing profile</small></span><ChevronRight /></button>
+          <button onClick={() => setTab('saved')}><span><Bookmark /><strong>Saved businesses</strong><small>{savedBusinesses.length} saved {savedBusinesses.length === 1 ? 'business' : 'businesses'}</small></span><ChevronRight /></button>
           {user && <button className="danger-action" onClick={async () => { await supabase.auth.signOut(); setTab('home'); setToast('Signed out.') }}><span><LogOut /><strong>Sign out</strong><small>{user.email}</small></span><ChevronRight /></button>}
         </div>
       </section>}
     </main>
 
-    <nav className="bottom-nav" aria-label="Primary navigation">
+    <nav className="bottom-nav directory-bottom-nav" aria-label="Primary navigation">
       {([
         ['home', Home, 'Home'],
-        ['discover', Compass, 'Discover'],
-        ['categories', Layers3, 'Categories'],
-        ['map', MapIcon, 'Map'],
+        ['directory', Search, 'Directory'],
+        ['categories', Grid2X2, 'Categories'],
         ['saved', Bookmark, 'Saved'],
-        ['profile', UserRound, 'Profile'],
+        ['account', UserRound, 'Account'],
       ] as const).map(([id, Icon, label]) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}><Icon size={20} /><span>{label}</span></button>)}
     </nav>
 
     {selected && <div className="sheet-backdrop" onMouseDown={() => setSelected(null)}>
-      <article className="business-sheet" onMouseDown={event => event.stopPropagation()}>
+      <article className="business-sheet directory-business-sheet" onMouseDown={event => event.stopPropagation()}>
         <button className="sheet-close" onClick={() => setSelected(null)}><X /></button>
         <div className="sheet-image">{selected.image_url ? <img src={selected.image_url} alt="" /> : <div className="image-fallback"><Store /></div>}<div className="image-shade" /><StatusBadge business={selected} /></div>
         <div className="sheet-copy">
           <div className="card-meta"><span>{labelCategory(selected.category)}{selected.subcategory ? ` · ${labelSubcategory(selected.subcategory)}` : ''}</span><Rating business={selected} /></div>
           <h2>{selected.business_name}</h2>
-          <p>{selected.short_description || `Discover this Black-owned ${labelCategory(selected.category).toLowerCase()} business in ${selected.city}.`}</p>
-          <div className="sheet-location"><MapPin size={16} /><span><strong>{selected.neighborhood || selected.city}</strong><small>{selected.address || `${selected.city}, ${selected.state}`}</small></span></div>
-          <div className="quick-actions">
+          <p>{selected.short_description || `${labelCategory(selected.category)} in ${selected.city}.`}</p>
+          <div className="sheet-location"><MapPin size={16} /><span><strong>{selected.neighborhood || selected.city}</strong><small>{selected.address || `${selected.city}${selected.state ? `, ${selected.state}` : ''}`}</small></span></div>
+          <div className="quick-actions directory-quick-contact">
             {selected.phone && <a href={`tel:${selected.phone}`}><Phone /><span>Call</span></a>}
             <a href={mapsUrl(selected)} target="_blank" rel="noreferrer"><Navigation /><span>Directions</span></a>
             {selected.website_url && <a href={selected.website_url} target="_blank" rel="noreferrer"><Globe2 /><span>Website</span></a>}
             {selected.instagram_handle && <a href={`https://instagram.com/${selected.instagram_handle.replace('@', '')}`} target="_blank" rel="noreferrer"><Camera /><span>Instagram</span></a>}
           </div>
-          <button className={`sheet-save ${savedIds.includes(selected.directory_id) ? 'saved' : ''}`} onClick={() => toggleFavorite(selected.directory_id)}><Bookmark fill={savedIds.includes(selected.directory_id) ? 'currentColor' : 'none'} /> {savedIds.includes(selected.directory_id) ? 'Saved to My Black Pages' : 'Save to My Black Pages'}</button>
-          <button className="claim-button" onClick={() => { setClaimName(user?.user_metadata?.full_name || ''); setClaimEmail(user?.email || ''); setClaimOpen(true) }}><ShieldCheck /> Own this business? Claim this profile <ChevronRight /></button>
-          <p className="profile-note">Directory information is sourced from enterprise business intelligence and owner submissions. Confirm details directly with each business.</p>
+          <button className={`sheet-save ${savedIds.includes(selected.directory_id) ? 'saved' : ''}`} onClick={() => toggleFavorite(selected.directory_id)}><Bookmark fill={savedIds.includes(selected.directory_id) ? 'currentColor' : 'none'} /> {savedIds.includes(selected.directory_id) ? 'Saved business' : 'Save business'}</button>
+          <button className="claim-button" onClick={() => { setClaimName(user?.user_metadata?.full_name || ''); setClaimEmail(user?.email || ''); setClaimOpen(true) }}><ShieldCheck /> Claim this business listing <ChevronRight /></button>
+          <p className="profile-note">Business information comes from directory research and owner submissions. Confirm details directly with the business.</p>
         </div>
       </article>
     </div>}
 
-    {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="auth-modal" onSubmit={authenticate} onMouseDown={event => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}><X /></button><AppMark /><span className="eyebrow">MY BLACK PAGES</span><h2>{authMode === 'signin' ? 'Welcome back.' : 'Build your network.'}</h2><p>Save businesses, submit reviews, and claim your business profile.</p><div className="segmented"><button type="button" className={authMode === 'signin' ? 'active' : ''} onClick={() => setAuthMode('signin')}>Sign in</button><button type="button" className={authMode === 'signup' ? 'active' : ''} onClick={() => setAuthMode('signup')}>Create account</button></div>{authMode === 'signup' && <label>Full name<input required value={authName} onChange={event => setAuthName(event.target.value)} /></label>}<label>Email<input required type="email" value={authEmail} onChange={event => setAuthEmail(event.target.value)} /></label><label>Password<input required minLength={8} type="password" value={authPassword} onChange={event => setAuthPassword(event.target.value)} /></label>{authError && <div className="form-error">{authError}</div>}<button className="primary-action" disabled={authBusy}>{authBusy ? 'Connecting…' : authMode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={16} /></button></form></div>}
+    {authOpen && <div className="modal-backdrop" onMouseDown={() => setAuthOpen(false)}><form className="auth-modal" onSubmit={authenticate} onMouseDown={event => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setAuthOpen(false)}><X /></button><AppMark /><span className="eyebrow">MY BLACK PAGES</span><h2>{authMode === 'signin' ? 'Sign in.' : 'Create an account.'}</h2><p>Save businesses and claim business listings.</p><div className="segmented"><button type="button" className={authMode === 'signin' ? 'active' : ''} onClick={() => setAuthMode('signin')}>Sign in</button><button type="button" className={authMode === 'signup' ? 'active' : ''} onClick={() => setAuthMode('signup')}>Create account</button></div>{authMode === 'signup' && <label>Full name<input required value={authName} onChange={event => setAuthName(event.target.value)} /></label>}<label>Email<input required type="email" value={authEmail} onChange={event => setAuthEmail(event.target.value)} /></label><label>Password<input required minLength={8} type="password" value={authPassword} onChange={event => setAuthPassword(event.target.value)} /></label>{authError && <div className="form-error">{authError}</div>}<button className="primary-action" disabled={authBusy}>{authBusy ? 'Connecting…' : authMode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={16} /></button></form></div>}
 
-    {applicationOpen && <div className="modal-backdrop" onMouseDown={() => setApplicationOpen(false)}><form className="application-modal" onSubmit={submitApplication} onMouseDown={event => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setApplicationOpen(false)}><X /></button>{applicationSuccess ? <div className="success-state"><div className="success-check"><Check /></div><span>APPLICATION RECEIVED</span><h2>Your business is in review.</h2><p>It will not appear publicly until the ownership and business details are reviewed.</p><button type="button" className="primary-action" onClick={() => { setApplicationSuccess(false); setApplicationOpen(false) }}>Done</button></div> : <><span className="eyebrow">BUSINESS APPLICATION</span><h2>Join The Black Pages.</h2><p>Submit accurate public business information. Approval is not automatic.</p><div className="form-grid"><label>Business name<input required value={application.businessName} onChange={event => setApplication({ ...application, businessName: event.target.value })} /></label><label>Owner/contact name<input required value={application.ownerName} onChange={event => setApplication({ ...application, ownerName: event.target.value })} /></label><label>Email<input required type="email" value={application.contactEmail} onChange={event => setApplication({ ...application, contactEmail: event.target.value })} /></label><label>Phone<input value={application.contactPhone} onChange={event => setApplication({ ...application, contactPhone: event.target.value })} /></label><label>Category<select required value={application.category} onChange={event => setApplication({ ...application, category: event.target.value })}><option value="">Choose category</option>{listingCategories.map(item => <option key={item}>{item}</option>)}</select></label><label>City<input required value={application.city} onChange={event => setApplication({ ...application, city: event.target.value })} /></label><label>State<input required maxLength={2} value={application.state} onChange={event => setApplication({ ...application, state: event.target.value.toUpperCase() })} /></label><label>Website<input type="url" placeholder="https://" value={application.websiteUrl} onChange={event => setApplication({ ...application, websiteUrl: event.target.value })} /></label><label>Instagram<input placeholder="@handle" value={application.instagramHandle} onChange={event => setApplication({ ...application, instagramHandle: event.target.value })} /></label><label className="wide">Description<textarea required maxLength={1200} value={application.description} onChange={event => setApplication({ ...application, description: event.target.value })} /></label><label className="certify wide"><input required type="checkbox" checked={application.ownershipCertification} onChange={event => setApplication({ ...application, ownershipCertification: event.target.checked })} /><span>I certify that this business is Black-owned and that I am authorized to submit it.</span></label></div>{applicationError && <div className="form-error">{applicationError}</div>}<button className="primary-action" disabled={applicationBusy}>{applicationBusy ? 'Submitting…' : 'Submit for review'} <ArrowRight size={16} /></button></>}</form></div>}
+    {applicationOpen && <div className="modal-backdrop" onMouseDown={() => setApplicationOpen(false)}><form className="application-modal" onSubmit={submitApplication} onMouseDown={event => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setApplicationOpen(false)}><X /></button>{applicationSuccess ? <div className="success-state"><div className="success-check"><Check /></div><span>BUSINESS RECEIVED</span><h2>Your listing is in review.</h2><p>It will appear in the directory after its Black ownership and business details are reviewed.</p><button type="button" className="primary-action" onClick={() => { setApplicationSuccess(false); setApplicationOpen(false) }}>Done</button></div> : <><span className="eyebrow">ADD A BUSINESS</span><h2>List a Black-owned business.</h2><p>Submit accurate public business information for directory review.</p><div className="form-grid"><label>Business name<input required value={application.businessName} onChange={event => setApplication({ ...application, businessName: event.target.value })} /></label><label>Owner/contact name<input required value={application.ownerName} onChange={event => setApplication({ ...application, ownerName: event.target.value })} /></label><label>Email<input required type="email" value={application.contactEmail} onChange={event => setApplication({ ...application, contactEmail: event.target.value })} /></label><label>Phone<input value={application.contactPhone} onChange={event => setApplication({ ...application, contactPhone: event.target.value })} /></label><label>Category<select required value={application.category} onChange={event => setApplication({ ...application, category: event.target.value })}><option value="">Choose category</option>{listingCategories.map(item => <option key={item}>{item}</option>)}</select></label><label>City<input required value={application.city} onChange={event => setApplication({ ...application, city: event.target.value })} /></label><label>State<input required maxLength={2} value={application.state} onChange={event => setApplication({ ...application, state: event.target.value.toUpperCase() })} /></label><label>Website<input type="url" placeholder="https://" value={application.websiteUrl} onChange={event => setApplication({ ...application, websiteUrl: event.target.value })} /></label><label>Instagram<input placeholder="@handle" value={application.instagramHandle} onChange={event => setApplication({ ...application, instagramHandle: event.target.value })} /></label><label className="wide">Business description<textarea required maxLength={1200} value={application.description} onChange={event => setApplication({ ...application, description: event.target.value })} /></label><label className="certify wide"><input required type="checkbox" checked={application.ownershipCertification} onChange={event => setApplication({ ...application, ownershipCertification: event.target.checked })} /><span>I certify that this business is Black-owned and that I am authorized to submit it.</span></label></div>{applicationError && <div className="form-error">{applicationError}</div>}<button className="primary-action" disabled={applicationBusy}>{applicationBusy ? 'Submitting…' : 'Submit business'} <ArrowRight size={16} /></button></>}</form></div>}
 
-    {claimOpen && selected && <div className="modal-backdrop" onMouseDown={() => setClaimOpen(false)}><form className="auth-modal" onSubmit={submitClaim} onMouseDown={event => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setClaimOpen(false)}><X /></button>{claimSuccess ? <div className="success-state"><div className="success-check"><Check /></div><span>CLAIM RECEIVED</span><h2>We’ll verify your connection.</h2><p>Your profile will not change until the claim is reviewed.</p><button type="button" className="primary-action" onClick={() => { setClaimSuccess(false); setClaimOpen(false) }}>Done</button></div> : <><ShieldCheck className="modal-icon" /><span className="eyebrow">CLAIM BUSINESS PROFILE</span><h2>{selected.business_name}</h2><p>Tell us who you are. Supporting proof can be requested during review.</p><label>Your name<input required value={claimName} onChange={event => setClaimName(event.target.value)} /></label><label>Email<input required type="email" value={claimEmail} onChange={event => setClaimEmail(event.target.value)} /></label><label>Role at business<select value={claimRole} onChange={event => setClaimRole(event.target.value)}><option>Owner</option><option>Co-owner</option><option>Manager</option><option>Authorized representative</option></select></label><button className="primary-action" disabled={claimBusy}>{claimBusy ? 'Submitting…' : 'Submit claim'} <ArrowRight size={16} /></button></>}</form></div>}
+    {claimOpen && selected && <div className="modal-backdrop" onMouseDown={() => setClaimOpen(false)}><form className="auth-modal" onSubmit={submitClaim} onMouseDown={event => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setClaimOpen(false)}><X /></button>{claimSuccess ? <div className="success-state"><div className="success-check"><Check /></div><span>CLAIM RECEIVED</span><h2>We’ll verify your connection.</h2><p>The public listing will not change until your claim is reviewed.</p><button type="button" className="primary-action" onClick={() => { setClaimSuccess(false); setClaimOpen(false) }}>Done</button></div> : <><ShieldCheck className="modal-icon" /><span className="eyebrow">CLAIM BUSINESS</span><h2>{selected.business_name}</h2><p>Tell us your role at this business.</p><label>Your name<input required value={claimName} onChange={event => setClaimName(event.target.value)} /></label><label>Email<input required type="email" value={claimEmail} onChange={event => setClaimEmail(event.target.value)} /></label><label>Role at business<select value={claimRole} onChange={event => setClaimRole(event.target.value)}><option>Owner</option><option>Co-owner</option><option>Manager</option><option>Authorized representative</option></select></label><button className="primary-action" disabled={claimBusy}>{claimBusy ? 'Submitting…' : 'Submit claim'} <ArrowRight size={16} /></button></>}</form></div>}
 
     {toast && <div className="toast">{toast}</div>}
     <BuildInfoBadge />

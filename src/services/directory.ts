@@ -1,22 +1,16 @@
 /**
- * Typed data access for the BLACK PAGES directory.
+ * Typed data access for THE BLACK PAGES business directory.
  *
- * Everything below is either a pure function (normalisation, filtering,
- * counting) or a thin typed wrapper over a Supabase client passed in by the
- * caller. Keeping the client as a parameter means the pure parts are unit
- * testable under `node --test` without a browser or network.
+ * THE BLACK PAGES is a business directory, not an events feed. Event-only
+ * source rows are deliberately excluded before they reach navigation, counts,
+ * search, saved lists, or the public directory UI.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { taxonomyKey } from '../lib/categories'
-import type { Database, DirectoryRow } from '../lib/database.types'
+import { labelCategory, labelSubcategory, taxonomyKey } from '../lib/categories.ts'
+import type { Database, DirectoryRow } from '../lib/database.types.ts'
 
 export type TypedSupabaseClient = SupabaseClient<Database>
 
-/**
- * Directory row after normalisation. Fields the UI treats as optional stay
- * nullable so rendering is unchanged; fields the UI always renders are
- * guaranteed non-null here instead of at every call site.
- */
 export type DirectoryBusiness = {
   directory_id: string
   source_type: string
@@ -47,14 +41,19 @@ export type DirectoryBusiness = {
 
 export type CategoryCount = readonly [category: string, count: number]
 export type SubcategoryCount = readonly [subcategory: string, count: number]
+export type DirectorySort = 'recommended' | 'az'
 
 export type DirectoryFilter = {
   category: string
   subcategory?: string
   query: string
+  location?: string
+  sort?: DirectorySort
 }
 
-/** Coerces PostgREST numerics (which may arrive as strings) to a finite number. */
+const EVENT_ONLY_CATEGORIES = new Set(['day_party', 'special_events'])
+const EVENT_ONLY_SUBCATEGORIES = new Set(['event_series'])
+
 function toNullableNumber(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null
   const parsed = typeof value === 'number' ? value : Number(value)
@@ -65,7 +64,6 @@ function toText(value: string | null | undefined): string {
   return typeof value === 'string' ? value : ''
 }
 
-/** Normalises one raw view row into the shape the UI consumes. */
 export function normalizeDirectoryRow(row: DirectoryRow): DirectoryBusiness {
   return {
     directory_id: toText(row.directory_id),
@@ -96,22 +94,23 @@ export function normalizeDirectoryRow(row: DirectoryRow): DirectoryBusiness {
   }
 }
 
-/** Normalises a result set, tolerating a null payload. */
 export function normalizeDirectoryRows(rows: DirectoryRow[] | null | undefined): DirectoryBusiness[] {
   return (rows ?? []).map(normalizeDirectoryRow)
 }
 
-/** Category counts, most populated first — drives the category rail. */
+/** True only for records that represent businesses rather than event programming. */
+export function isBusinessListing(business: DirectoryBusiness): boolean {
+  if (EVENT_ONLY_CATEGORIES.has(taxonomyKey(business.category))) return false
+  if (EVENT_ONLY_SUBCATEGORIES.has(taxonomyKey(business.subcategory))) return false
+  return true
+}
+
 export function countByCategory(businesses: readonly DirectoryBusiness[]): CategoryCount[] {
   const counts = new Map<string, number>()
   businesses.forEach(business => counts.set(business.category, (counts.get(business.category) || 0) + 1))
-  return [...counts.entries()].sort((a, b) => b[1] - a[1])
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || labelCategory(a[0]).localeCompare(labelCategory(b[0])))
 }
 
-/**
- * Subcategory counts for a category. Values are grouped by their normalized
- * taxonomy key so source variations do not create duplicate navigation items.
- */
 export function countBySubcategory(
   businesses: readonly DirectoryBusiness[],
   category = 'all',
@@ -123,26 +122,26 @@ export function countBySubcategory(
     if (!key) return
     counts.set(key, (counts.get(key) || 0) + 1)
   })
-  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || labelSubcategory(a[0]).localeCompare(labelSubcategory(b[0])))
 }
 
-/** Category + subcategory + free-text filter used by the discover screen. */
+/** Business-name/service + category + location search used by the directory. */
 export function filterDirectory(
   businesses: readonly DirectoryBusiness[],
-  { category, subcategory = 'all', query }: DirectoryFilter,
+  { category, subcategory = 'all', query, location = '', sort = 'recommended' }: DirectoryFilter,
 ): DirectoryBusiness[] {
   const needle = query.trim().toLowerCase()
-  return businesses.filter(business => {
+  const locationNeedle = location.trim().toLowerCase()
+
+  const results = businesses.filter(business => {
     const categoryMatch = category === 'all' || business.category === category
     const subcategoryMatch = subcategory === 'all' || taxonomyKey(business.subcategory) === subcategory
     const searchMatch =
       !needle ||
       [
         business.business_name,
-        business.category,
-        business.subcategory,
-        business.neighborhood,
-        business.city,
+        labelCategory(business.category),
+        business.subcategory ? labelSubcategory(business.subcategory) : '',
         business.short_description,
         ...business.tags,
       ]
@@ -150,25 +149,36 @@ export function filterDirectory(
         .join(' ')
         .toLowerCase()
         .includes(needle)
-    return categoryMatch && subcategoryMatch && searchMatch
+    const locationMatch =
+      !locationNeedle ||
+      [business.neighborhood, business.city, business.state, business.address]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(locationNeedle)
+    return categoryMatch && subcategoryMatch && searchMatch && locationMatch
+  })
+
+  return [...results].sort((a, b) => {
+    if (sort === 'az') return a.business_name.localeCompare(b.business_name)
+    if (a.featured !== b.featured) return a.featured ? -1 : 1
+    const ratingDelta = Number(b.rating || 0) - Number(a.rating || 0)
+    return ratingDelta || a.business_name.localeCompare(b.business_name)
   })
 }
 
-/** Businesses that can be plotted, i.e. have both coordinates. */
 export function mapReadyBusinesses(businesses: readonly DirectoryBusiness[]): DirectoryBusiness[] {
   return businesses.filter(business => business.latitude != null && business.longitude != null)
 }
 
-/** Featured rail: explicitly featured, or highly rated. */
+/** Curated business rail: explicitly featured first, then strong directory profiles. */
 export function featuredBusinesses(businesses: readonly DirectoryBusiness[]): DirectoryBusiness[] {
-  return businesses.filter(business => business.featured || Number(business.rating || 0) >= 4.5).slice(0, 8)
+  return [...businesses]
+    .filter(business => business.featured || Number(business.rating || 0) >= 4.5)
+    .sort((a, b) => Number(b.featured) - Number(a.featured) || Number(b.rating || 0) - Number(a.rating || 0))
+    .slice(0, 8)
 }
 
-/**
- * The single city a set of businesses belongs to, or null when it spans more
- * than one. Used so a heading never claims a city the listings do not share —
- * the directory is multi-city, and the featured rail is not filtered by city.
- */
 export function singleCity(businesses: readonly DirectoryBusiness[]): string | null {
   const cities = new Set(
     businesses.map(business => (business.city || '').trim()).filter(city => city.length > 0),
@@ -176,13 +186,6 @@ export function singleCity(businesses: readonly DirectoryBusiness[]): string | n
   return cities.size === 1 ? [...cities][0] : null
 }
 
-/**
- * Distinct images across a set of listings.
- *
- * Deliberately counts DISTINCT urls, not listings-that-have-an-image: the
- * sourced directory reuses a small pool of stock photography, so counting
- * listings overstates how much real imagery exists.
- */
 export function distinctImageCount(businesses: readonly DirectoryBusiness[]): number {
   return new Set(
     businesses.map(business => business.image_url).filter((url): url is string => Boolean(url)),
@@ -191,11 +194,10 @@ export function distinctImageCount(businesses: readonly DirectoryBusiness[]): nu
 
 export type DirectoryResult = {
   businesses: DirectoryBusiness[]
-  /** Operator-facing message when the published count is unknown. */
   error: string | null
 }
 
-/** Reads every published directory row in the order the UI expects. */
+/** Reads the published directory and strips event-only records before returning it. */
 export async function fetchDirectory(client: TypedSupabaseClient): Promise<DirectoryResult> {
   const { data, error } = await client
     .from('black_pages_directory')
@@ -204,11 +206,10 @@ export async function fetchDirectory(client: TypedSupabaseClient): Promise<Direc
     .order('rating', { ascending: false, nullsFirst: false })
     .order('business_name')
 
-  if (error) return { businesses: [], error: 'The live directory could not be loaded.' }
-  return { businesses: normalizeDirectoryRows(data), error: null }
+  if (error) return { businesses: [], error: 'The live business directory could not be loaded.' }
+  return { businesses: normalizeDirectoryRows(data).filter(isBusinessListing), error: null }
 }
 
-/** Directory ids the signed-in user has saved. */
 export async function fetchSavedDirectoryIds(client: TypedSupabaseClient, userAuthId: string): Promise<string[]> {
   const { data } = await client.from('black_pages_favorites').select('directory_id').eq('user_auth_id', userAuthId)
   return (data ?? []).map(item => item.directory_id)
@@ -246,7 +247,6 @@ export type ClaimSubmission = {
   roleAtBusiness: string
 }
 
-/** Submits (or updates) an owner claim. Approval stays service-role only. */
 export async function submitOwnerClaim(
   client: TypedSupabaseClient,
   claim: ClaimSubmission,

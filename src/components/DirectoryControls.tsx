@@ -1,58 +1,84 @@
-import { ChevronRight, LocateFixed, Search, X } from 'lucide-react'
+import { ChevronRight, MapPin, Search, X } from 'lucide-react'
 import { labelCategory } from '../lib/categories'
 import type { CategoryCount } from '../services/directory'
 
-/** Home-screen search bar that hands off to the discover tab. */
-export function FloatingSearch({ query, onQueryChange, onFocus, onUseLocation }: {
+/** White-Pages-style business/service + location search. */
+export function DirectorySearchPanel({
+  query,
+  location,
+  onQueryChange,
+  onLocationChange,
+  onSubmit,
+  compact = false,
+}: {
   query: string
+  location: string
   onQueryChange: (value: string) => void
-  onFocus: () => void
-  onUseLocation: () => void
+  onLocationChange: (value: string) => void
+  onSubmit: () => void
+  compact?: boolean
 }) {
-  return <section className="floating-search">
-    <Search size={19} />
-    <input value={query} onChange={event => onQueryChange(event.target.value)} onFocus={onFocus} placeholder="What are you looking for?" />
-    <button aria-label="Use my location" onClick={onUseLocation}><LocateFixed size={18} /></button>
-  </section>
+  return <form className={`directory-search-panel ${compact ? 'compact' : ''}`} onSubmit={event => { event.preventDefault(); onSubmit() }}>
+    <label className="directory-field">
+      <Search size={18} />
+      <span>
+        <small>WHAT</small>
+        <input value={query} onChange={event => onQueryChange(event.target.value)} placeholder="Business, service, or category" />
+      </span>
+      {query && <button type="button" aria-label="Clear business search" onClick={() => onQueryChange('')}><X size={15} /></button>}
+    </label>
+    <label className="directory-field">
+      <MapPin size={18} />
+      <span>
+        <small>WHERE</small>
+        <input value={location} onChange={event => onLocationChange(event.target.value)} placeholder="City, state, or neighborhood" />
+      </span>
+      {location && <button type="button" aria-label="Clear location" onClick={() => onLocationChange('')}><X size={15} /></button>}
+    </label>
+    <button className="directory-search-submit" type="submit"><Search size={17} /> Search</button>
+  </form>
 }
 
-/** Discover-screen search field with a clear button. */
-export function DirectorySearch({ query, onQueryChange }: {
-  query: string
-  onQueryChange: (value: string) => void
-}) {
-  return <div className="directory-search"><Search size={19} /><input autoFocus value={query} onChange={event => onQueryChange(event.target.value)} placeholder="Business, food, beauty, service, neighborhood…" />{query && <button onClick={() => onQueryChange('')}><X size={17} /></button>}</div>
-}
-
-/** Discover-screen category chips. */
 export function CategoryFilterRail({ categories, category, onCategoryChange }: {
   categories: readonly CategoryCount[]
   category: string
   onCategoryChange: (value: string) => void
 }) {
-  return <div className="filter-rail"><button className={category === 'all' ? 'active' : ''} onClick={() => onCategoryChange('all')}>All</button>{categories.map(([key, count]) => <button className={category === key ? 'active' : ''} key={key} onClick={() => onCategoryChange(key)}>{labelCategory(key)} <small>{count}</small></button>)}</div>
+  return <div className="filter-rail directory-filter-rail" aria-label="Business category filter">
+    <button className={category === 'all' ? 'active' : ''} onClick={() => onCategoryChange('all')}>All businesses</button>
+    {categories.map(([key, count]) => <button className={category === key ? 'active' : ''} key={key} onClick={() => onCategoryChange(key)}>
+      {labelCategory(key)} <small>{count}</small>
+    </button>)}
+  </div>
 }
 
 function categoryGlyph(key: string) {
-  if (key === 'restaurant' || key === 'brunch') return '🍽'
-  if (key === 'beauty' || key === 'spa') return '✦'
-  if (key === 'nightclub' || key === 'lounge') return '◐'
-  if (key === 'shopping') return '◆'
+  const value = key.toLowerCase()
+  if (value.includes('restaurant') || value.includes('brunch') || value.includes('food')) return '🍽'
+  if (value.includes('beauty') || value.includes('spa') || value.includes('wellness')) return '✦'
+  if (value.includes('nightclub') || value.includes('lounge') || value.includes('bar')) return '◐'
+  if (value.includes('shop') || value.includes('retail')) return '◆'
+  if (value.includes('culture') || value.includes('jazz') || value.includes('comedy')) return '◈'
+  if (value.includes('fitness')) return '▲'
+  if (value.includes('business') || value.includes('professional')) return '▣'
   return '●'
 }
 
-/** Home-screen "browse by category" block. */
+/** Home-screen category shortcuts: useful, compact, and business-only. */
 export function CategoryRail({ categories, onSelectCategory, onSeeAll }: {
   categories: readonly CategoryCount[]
   onSelectCategory: (value: string) => void
   onSeeAll: () => void
 }) {
-  return <section className="section-block">
-    <div className="section-title"><div><span>EXPLORE</span><h2>Browse by category</h2></div><button onClick={onSeeAll}>See all <ChevronRight size={15} /></button></div>
+  return <section className="section-block directory-category-section">
+    <div className="section-title">
+      <div><span>BROWSE</span><h2>Business categories</h2><p>Find the type of business you need.</p></div>
+      <button onClick={onSeeAll}>All categories <ChevronRight size={15} /></button>
+    </div>
     <div className="category-rail">
-      {categories.slice(0, 10).map(([key, count]) => <button key={key} onClick={() => onSelectCategory(key)}>
+      {categories.slice(0, 8).map(([key, count]) => <button key={key} onClick={() => onSelectCategory(key)}>
         <span className="category-icon">{categoryGlyph(key)}</span>
-        <strong>{labelCategory(key)}</strong><small>{count} businesses</small>
+        <strong>{labelCategory(key)}</strong><small>{count} {count === 1 ? 'business' : 'businesses'}</small>
       </button>)}
     </div>
   </section>

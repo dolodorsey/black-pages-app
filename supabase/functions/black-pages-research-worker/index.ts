@@ -15,8 +15,8 @@ type FetchEvidence = {
 };
 
 const workerName = "black-pages-research-worker";
-const maxBodyBytes = 400_000;
-const concurrency = 10;
+const maxBodyBytes = 300_000;
+const concurrency = 20;
 const ownershipPatterns = [
   /\b(?:proudly\s+)?black[\s-]+owned\b/gi,
   /\bblack[\s-]+woman[\s-]+owned\b/gi,
@@ -92,16 +92,16 @@ function evidenceLinks(html: string, base: URL) {
   const links = new Set<string>(); const pattern = /href\s*=\s*["']([^"'#]+)["']/gi; let match: RegExpExecArray | null;
   while ((match = pattern.exec(html)) && links.size < 4) {
     if (!/(about|our[-_ ]?story|founder|ownership|mission|who[-_ ]?we[-_ ]?are)/i.test(match[1])) continue;
-    try { const target = validatePublicUrl(new URL(match[1], base).toString()); if (target.hostname === base.hostname) links.add(target.toString()); } catch { /* ignore */ }
+    try { const target = validatePublicUrl(new URL(match[1], base).toString()); if (target.hostname === base.hostname) links.add(target.toString()); } catch { }
   }
   return [...links];
 }
 
-async function fetchText(target: URL, timeout = 7000) {
+async function fetchText(target: URL, timeout = 6000) {
   let current = target; let response: Response | null = null;
   for (let redirect = 0; redirect <= 4; redirect += 1) {
     response = await fetch(current, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(timeout), headers: {
-      "User-Agent": "TheBlackPagesResearchBot/2.0 (+public business verification)",
+      "User-Agent": "TheBlackPagesResearchBot/3.0 (+public business verification)",
       "Accept": "text/html,application/xhtml+xml;q=0.9,text/plain;q=0.8,*/*;q=0.2",
     }});
     if ([301,302,303,307,308].includes(response.status)) {
@@ -123,10 +123,10 @@ async function fetchPublicEvidence(candidate: Candidate): Promise<FetchEvidence>
   try { startUrl = validatePublicUrl(candidate.website_url); }
   catch (error) { return { reachable:false,checked_url:candidate.website_url,final_url:null,fetch_status:null,content_type:null,page_title:null,explicit_ownership_evidence:false,ownership_evidence:[],error:error instanceof Error ? error.message : "invalid_url",duration_ms:Date.now()-started }; }
   try {
-    const first = await fetchText(startUrl, 7000); let evidence = extractOwnershipEvidence(htmlToText(first.html)); let evidenceUrl = first.current.toString();
+    const first = await fetchText(startUrl, 6000); let evidence = extractOwnershipEvidence(htmlToText(first.html)); let evidenceUrl = first.current.toString();
     if (!evidence.length && first.response.ok && /html|xhtml/i.test(first.contentType || "text/html") && first.current.hostname !== "www.instagram.com") {
       for (const link of evidenceLinks(first.html, first.current).slice(0,2)) {
-        try { const detail = await fetchText(validatePublicUrl(link), 5000); const found = extractOwnershipEvidence(htmlToText(detail.html)); if (found.length) { evidence = found; evidenceUrl = detail.current.toString(); break; } } catch { /* continue */ }
+        try { const detail = await fetchText(validatePublicUrl(link), 4500); const found = extractOwnershipEvidence(htmlToText(detail.html)); if (found.length) { evidence = found; evidenceUrl = detail.current.toString(); break; } } catch { }
       }
     }
     return { reachable:first.response.status >= 200 && first.response.status < 500,checked_url:candidate.website_url,final_url:evidenceUrl,fetch_status:first.response.status,content_type:first.contentType,page_title:titleFromHtml(first.html),explicit_ownership_evidence:evidence.length>0,ownership_evidence:evidence,duration_ms:Date.now()-started };
@@ -145,7 +145,7 @@ Deno.serve(async request => {
   if (authError || authorized !== true) return json({ error: "Unauthorized" }, 401);
 
   let payload: { limit?: number } = {}; try { payload = await request.json(); } catch { payload = {}; }
-  const limit = Math.min(100, Math.max(1, Number(payload.limit) || 50));
+  const limit = Math.min(100, Math.max(1, Number(payload.limit) || 100));
   const { data: claim, error: claimError } = await supabase.rpc("black_pages_claim_research_batch", { p_limit: limit, p_worker: workerName });
   if (claimError) return json({ error: claimError.message }, 500);
   const runId = String(claim?.run_id || ""); const candidates = Array.isArray(claim?.candidates) ? claim.candidates as Candidate[] : [];

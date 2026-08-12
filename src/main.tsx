@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import CoverageCommandCenterHost from './CoverageCommandCenterHost'
 import LocationInteractionHost from './LocationInteractionHost'
 import ReviewInteractionHost from './ReviewInteractionHost'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -13,12 +14,16 @@ import './location-intelligence.css'
 
 publishBuildInfo()
 
+const coverageMode = new URLSearchParams(window.location.search).get('coverage') === '1'
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <LocationInteractionHost/>
-      <ReviewInteractionHost/>
-      <App/>
+      {coverageMode ? <CoverageCommandCenterHost /> : <>
+        <LocationInteractionHost/>
+        <ReviewInteractionHost/>
+        <App/>
+      </>}
     </ErrorBoundary>
   </StrictMode>,
 )

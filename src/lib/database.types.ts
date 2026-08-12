@@ -130,7 +130,12 @@ export type Database = {
         Relationships: []
       }
     }
-    Functions: Record<never, never>
+    Functions: {
+      black_pages_staff_coverage_snapshot: {
+        Args: { p_city?: string | null; p_limit?: number }
+        Returns: Json
+      }
+    }
     Enums: Record<never, never>
     CompositeTypes: Record<never, never>
   }

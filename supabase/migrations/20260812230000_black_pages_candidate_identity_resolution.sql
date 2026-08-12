@@ -105,16 +105,11 @@ grant all on public.black_pages_candidate_identities,public.black_pages_candidat
 
 create or replace function public.black_pages_resolve_candidate_identities(p_limit integer default 30000)
 returns jsonb
-language plpgsql security definer set search_path='pg_catalog','public','auth' as $$
+language plpgsql security definer set search_path='pg_catalog','public' as $$
 declare
-  v_role text:=coalesce(auth.jwt()->'app_metadata'->>'khg_role','');
   v_limit integer:=least(50000,greatest(1,coalesce(p_limit,30000)));
   v_identity_count integer:=0;v_member_count integer:=0;
 begin
-  if coalesce(auth.role(),'')<>'service_role' and v_role not in('owner','admin','editor') then
-    raise exception 'Staff access required' using errcode='42501';
-  end if;
-
   with src as(
     select q.*,
       public.black_pages_candidate_identity_key(q.business_name,q.city,q.state,q.website_url,q.public_phone,q.public_email) identity_key,
@@ -184,7 +179,7 @@ begin
   );
 end $$;
 revoke all on function public.black_pages_resolve_candidate_identities(integer) from public,anon,authenticated;
-grant execute on function public.black_pages_resolve_candidate_identities(integer) to authenticated,service_role;
+grant execute on function public.black_pages_resolve_candidate_identities(integer) to service_role;
 
 create or replace view public.black_pages_candidate_identity_summary
 with (security_invoker=true) as
@@ -264,7 +259,7 @@ language plpgsql security definer set search_path='pg_catalog','public','auth' a
 declare
   v_role text:=coalesce(auth.jwt()->'app_metadata'->>'khg_role','');
   v_decision text:=lower(btrim(coalesce(p_decision,'')));v_reason text:=left(btrim(coalesce(p_reason,'')),2000);
-  v_ids uuid[]:=coalesce(p_identity_ids,'{}'::uuid[]);v_identity uuid;v_candidates integer:=0;v_identities integer:=0;v_snapshot jsonb;
+  v_ids uuid[]:=coalesce(p_identity_ids,'{}'::uuid[]);v_identity uuid;v_candidates integer:=0;v_identities integer:=0;v_snapshot jsonb;v_affected integer:=0;
 begin
   if v_role not in('owner','admin','editor') then raise exception 'Staff access required' using errcode='42501';end if;
   if v_decision not in('approve','reject','needs_more_evidence') then raise exception 'Invalid decision';end if;
@@ -291,7 +286,7 @@ begin
         notes=left(concat_ws(E'\n',nullif(q.notes,''),'Human identity-bundle review approved evidence: '||v_reason),4000),updated_at=now()
       where q.id in(select candidate_id from public.black_pages_candidate_identity_members where identity_id=v_identity)
         and q.pipeline_stage not in('published','rejected','do_not_contact');
-      get diagnostics v_candidates=v_candidates+row_count;
+      get diagnostics v_affected = row_count;v_candidates:=v_candidates+v_affected;
       update public.black_pages_candidate_verification_reviews r set status='approved',reviewer_user_id=auth.uid(),reviewer_role=v_role,reviewer_note=v_reason,reviewed_at=now(),updated_at=now()
       where r.candidate_id in(select candidate_id from public.black_pages_candidate_identity_members where identity_id=v_identity);
       update public.black_pages_candidate_identities set status='reviewed',updated_at=now() where id=v_identity;
@@ -299,7 +294,7 @@ begin
       update public.black_pages_candidate_queue q set ownership_evidence_status='not_black_owned',pipeline_stage='rejected',assigned_researcher='staff:'||auth.uid()::text,
         notes=left(concat_ws(E'\n',nullif(q.notes,''),'Human identity-bundle review rejected business: '||v_reason),4000),updated_at=now()
       where q.id in(select candidate_id from public.black_pages_candidate_identity_members where identity_id=v_identity) and q.pipeline_stage not in('published','do_not_contact');
-      get diagnostics v_candidates=v_candidates+row_count;
+      get diagnostics v_affected = row_count;v_candidates:=v_candidates+v_affected;
       update public.black_pages_candidate_verification_reviews r set status='rejected',reviewer_user_id=auth.uid(),reviewer_role=v_role,reviewer_note=v_reason,reviewed_at=now(),updated_at=now()
       where r.candidate_id in(select candidate_id from public.black_pages_candidate_identity_members where identity_id=v_identity);
       update public.black_pages_candidate_identities set status='rejected',updated_at=now() where id=v_identity;
@@ -307,7 +302,7 @@ begin
       update public.black_pages_candidate_queue q set ownership_evidence_status='unreviewed',pipeline_stage='research',assigned_researcher='black-pages-research-worker',next_action_at=now(),
         notes=left(concat_ws(E'\n',nullif(q.notes,''),'Human identity-bundle review requested more evidence: '||v_reason),4000),updated_at=now()
       where q.id in(select candidate_id from public.black_pages_candidate_identity_members where identity_id=v_identity) and q.pipeline_stage not in('published','rejected','do_not_contact');
-      get diagnostics v_candidates=v_candidates+row_count;
+      get diagnostics v_affected = row_count;v_candidates:=v_candidates+v_affected;
       update public.black_pages_candidate_verification_reviews r set status='needs_more_evidence',reviewer_user_id=auth.uid(),reviewer_role=v_role,reviewer_note=v_reason,reviewed_at=now(),updated_at=now()
       where r.candidate_id in(select candidate_id from public.black_pages_candidate_identity_members where identity_id=v_identity);
       update public.black_pages_candidate_identities set status='needs_more_evidence',updated_at=now() where id=v_identity;
@@ -327,5 +322,3 @@ begin
 end $$;
 revoke all on function public.black_pages_staff_batch_identity_review(uuid[],text,text) from public,anon,authenticated;
 grant execute on function public.black_pages_staff_batch_identity_review(uuid[],text,text) to authenticated;
-
-select public.black_pages_resolve_candidate_identities(50000);

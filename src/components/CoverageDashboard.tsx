@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, ChevronRight, Database, MapPinned, RefreshCw, Search, Target } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronRight, Database as DatabaseIcon, MapPinned, RefreshCw, Search, Target } from 'lucide-react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '../lib/database.types.ts'
 import { fetchCoverageSnapshot, type CoverageCell, type CoverageSnapshot } from '../services/coverage.ts'
@@ -66,7 +66,7 @@ export function CoverageDashboard({ supabase }: { supabase: SupabaseClient<Datab
       <article><MapPinned /><span>City launch target</span><strong>{selectedCity?.city_launch_target || 0}</strong><small>{selectedCity?.published_business_slots || 0} publishable profiles classified into taxonomy cells</small></article>
       <article><CheckCircle2 /><span>Types covered</span><strong>{selectedCity?.target_met_cells || 0}<em>/441</em></strong><small>{selectedCity?.taxonomy_coverage_pct || 0}% taxonomy presence</small></article>
       <article><Search /><span>Candidates found</span><strong>{selectedCity?.candidate_found_cells || 0}</strong><small>{selectedCity?.candidate_slots || 0} candidate records routed into open types</small></article>
-      <article><Database /><span>Enrichment queue</span><strong>{snapshot?.enrichment.pending || 0}</strong><small>{snapshot?.enrichment.complete || 0} location enrichments completed · {snapshot?.enrichment.manual || 0} manual</small></article>
+      <article><DatabaseIcon /><span>Enrichment queue</span><strong>{snapshot?.enrichment.pending || 0}</strong><small>{snapshot?.enrichment.complete || 0} location enrichments completed · {snapshot?.enrichment.manual || 0} manual</small></article>
     </div>
 
     <section className="coverage-category-health">

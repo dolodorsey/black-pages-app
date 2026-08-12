@@ -1,13 +1,7 @@
-/**
- * Typed data access for THE BLACK PAGES business directory.
- *
- * THE BLACK PAGES is a business directory, not an events feed. Event-only
- * source rows are deliberately excluded before they reach navigation, counts,
- * search, saved lists, or the public directory UI.
- */
+/** Typed data access and location intelligence for THE BLACK PAGES. */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { labelCategory, labelSubcategory, taxonomyKey } from '../lib/categories.ts'
-import type { Database, DirectoryRow } from '../lib/database.types.ts'
+import type { Database, DirectoryRow, Json } from '../lib/database.types.ts'
 
 export type TypedSupabaseClient = SupabaseClient<Database>
 
@@ -23,10 +17,12 @@ export type DirectoryBusiness = {
   state: string
   neighborhood: string | null
   address: string | null
+  postal_code: string | null
   short_description: string | null
   website_url: string | null
   instagram_handle: string | null
   phone: string | null
+  business_email: string | null
   image_url: string | null
   latitude: number | null
   longitude: number | null
@@ -37,11 +33,20 @@ export type DirectoryBusiness = {
   ownership_status: string
   owner_verified: boolean
   tags: string[]
+  hours: Json | null
+  service_area: string | null
+  specialties: string[]
+  facebook_url: string | null
+  linkedin_url: string | null
+  tiktok_url: string | null
+  serves_customers_at_location: boolean
+  service_radius_miles: number | null
 }
 
 export type CategoryCount = readonly [category: string, count: number]
 export type SubcategoryCount = readonly [subcategory: string, count: number]
-export type DirectorySort = 'recommended' | 'az'
+export type DirectorySort = 'recommended' | 'az' | 'distance'
+export type GeoPoint = { latitude: number; longitude: number }
 
 export type DirectoryFilter = {
   category: string
@@ -49,10 +54,20 @@ export type DirectoryFilter = {
   query: string
   location?: string
   sort?: DirectorySort
+  near?: GeoPoint | null
+  maxDistanceMiles?: number
 }
 
-const EVENT_ONLY_CATEGORIES = new Set(['day_party', 'special_events'])
-const EVENT_ONLY_SUBCATEGORIES = new Set(['event_series'])
+export type LocationGroup = {
+  key: string
+  city: string
+  state: string
+  count: number
+  neighborhoods: string[]
+  postalCodes: string[]
+}
+
+const EVENT_ONLY_SUBCATEGORIES = new Set(['event-series'])
 
 function toNullableNumber(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null
@@ -77,10 +92,12 @@ export function normalizeDirectoryRow(row: DirectoryRow): DirectoryBusiness {
     state: toText(row.state),
     neighborhood: row.neighborhood ?? null,
     address: row.address ?? null,
+    postal_code: row.postal_code ?? null,
     short_description: row.short_description ?? null,
     website_url: row.website_url ?? null,
     instagram_handle: row.instagram_handle ?? null,
     phone: row.phone ?? null,
+    business_email: row.business_email ?? null,
     image_url: row.image_url ?? null,
     latitude: toNullableNumber(row.latitude),
     longitude: toNullableNumber(row.longitude),
@@ -90,7 +107,15 @@ export function normalizeDirectoryRow(row: DirectoryRow): DirectoryBusiness {
     featured: row.featured === true,
     ownership_status: toText(row.ownership_status),
     owner_verified: row.owner_verified === true,
-    tags: Array.isArray(row.tags) ? row.tags.filter(tag => typeof tag === 'string' && tag.length > 0) : [],
+    tags: Array.isArray(row.tags) ? row.tags.filter((tag): tag is string => typeof tag === 'string' && tag.length > 0) : [],
+    hours: row.hours ?? null,
+    service_area: row.service_area ?? null,
+    specialties: Array.isArray(row.specialties) ? row.specialties.filter((item): item is string => typeof item === 'string' && item.length > 0) : [],
+    facebook_url: row.facebook_url ?? null,
+    linkedin_url: row.linkedin_url ?? null,
+    tiktok_url: row.tiktok_url ?? null,
+    serves_customers_at_location: row.serves_customers_at_location !== false,
+    service_radius_miles: row.service_radius_miles ?? null,
   }
 }
 
@@ -98,11 +123,8 @@ export function normalizeDirectoryRows(rows: DirectoryRow[] | null | undefined):
   return (rows ?? []).map(normalizeDirectoryRow)
 }
 
-/** True only for records that represent businesses rather than event programming. */
 export function isBusinessListing(business: DirectoryBusiness): boolean {
-  if (EVENT_ONLY_CATEGORIES.has(taxonomyKey(business.category))) return false
-  if (EVENT_ONLY_SUBCATEGORIES.has(taxonomyKey(business.subcategory))) return false
-  return true
+  return !EVENT_ONLY_SUBCATEGORIES.has(taxonomyKey(business.subcategory))
 }
 
 export function countByCategory(businesses: readonly DirectoryBusiness[]): CategoryCount[] {
@@ -111,10 +133,7 @@ export function countByCategory(businesses: readonly DirectoryBusiness[]): Categ
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || labelCategory(a[0]).localeCompare(labelCategory(b[0])))
 }
 
-export function countBySubcategory(
-  businesses: readonly DirectoryBusiness[],
-  category = 'all',
-): SubcategoryCount[] {
+export function countBySubcategory(businesses: readonly DirectoryBusiness[], category = 'all'): SubcategoryCount[] {
   const counts = new Map<string, number>()
   businesses.forEach(business => {
     if (category !== 'all' && business.category !== category) return
@@ -125,10 +144,26 @@ export function countBySubcategory(
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || labelSubcategory(a[0]).localeCompare(labelSubcategory(b[0])))
 }
 
-/** Business-name/service + category + location search used by the directory. */
+export function distanceMiles(a: GeoPoint, b: GeoPoint): number {
+  const radius = 3958.7613
+  const toRad = (degrees: number) => degrees * Math.PI / 180
+  const dLat = toRad(b.latitude - a.latitude)
+  const dLon = toRad(b.longitude - a.longitude)
+  const lat1 = toRad(a.latitude)
+  const lat2 = toRad(b.latitude)
+  const hav = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2
+  return 2 * radius * Math.asin(Math.sqrt(hav))
+}
+
+export function distanceFrom(business: DirectoryBusiness, point: GeoPoint | null | undefined): number | null {
+  if (!point || business.latitude == null || business.longitude == null) return null
+  return distanceMiles(point, { latitude: business.latitude, longitude: business.longitude })
+}
+
+/** WHAT + WHERE + taxonomy + near-me directory search. */
 export function filterDirectory(
   businesses: readonly DirectoryBusiness[],
-  { category, subcategory = 'all', query, location = '', sort = 'recommended' }: DirectoryFilter,
+  { category, subcategory = 'all', query, location = '', sort = 'recommended', near = null, maxDistanceMiles = 50 }: DirectoryFilter,
 ): DirectoryBusiness[] {
   const needle = query.trim().toLowerCase()
   const locationNeedle = location.trim().toLowerCase()
@@ -136,30 +171,31 @@ export function filterDirectory(
   const results = businesses.filter(business => {
     const categoryMatch = category === 'all' || business.category === category
     const subcategoryMatch = subcategory === 'all' || taxonomyKey(business.subcategory) === subcategory
-    const searchMatch =
-      !needle ||
-      [
-        business.business_name,
-        labelCategory(business.category),
-        business.subcategory ? labelSubcategory(business.subcategory) : '',
-        business.short_description,
-        ...business.tags,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(needle)
-    const locationMatch =
-      !locationNeedle ||
-      [business.neighborhood, business.city, business.state, business.address]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(locationNeedle)
-    return categoryMatch && subcategoryMatch && searchMatch && locationMatch
+    const searchMatch = !needle || [
+      business.business_name,
+      labelCategory(business.category),
+      business.subcategory ? labelSubcategory(business.subcategory) : '',
+      business.short_description,
+      ...business.specialties,
+      ...business.tags,
+    ].filter(Boolean).join(' ').toLowerCase().includes(needle)
+    const locationMatch = !locationNeedle || [
+      business.neighborhood,
+      business.city,
+      business.state,
+      business.address,
+      business.postal_code,
+      business.service_area,
+    ].filter(Boolean).join(' ').toLowerCase().includes(locationNeedle)
+    const nearDistance = distanceFrom(business, near)
+    const nearMatch = !near || (nearDistance != null && nearDistance <= maxDistanceMiles)
+    return categoryMatch && subcategoryMatch && searchMatch && locationMatch && nearMatch
   })
 
   return [...results].sort((a, b) => {
+    if (sort === 'distance' && near) {
+      return (distanceFrom(a, near) ?? Number.POSITIVE_INFINITY) - (distanceFrom(b, near) ?? Number.POSITIVE_INFINITY)
+    }
     if (sort === 'az') return a.business_name.localeCompare(b.business_name)
     if (a.featured !== b.featured) return a.featured ? -1 : 1
     const ratingDelta = Number(b.rating || 0) - Number(a.rating || 0)
@@ -167,11 +203,29 @@ export function filterDirectory(
   })
 }
 
-export function mapReadyBusinesses(businesses: readonly DirectoryBusiness[]): DirectoryBusiness[] {
-  return businesses.filter(business => business.latitude != null && business.longitude != null)
+export function buildLocationGroups(businesses: readonly DirectoryBusiness[]): LocationGroup[] {
+  const groups = new Map<string, { city: string; state: string; count: number; neighborhoods: Set<string>; postalCodes: Set<string> }>()
+  businesses.forEach(business => {
+    const city = business.city.trim()
+    const state = business.state.trim()
+    if (!city) return
+    const key = `${city.toLowerCase()}|${state.toLowerCase()}`
+    const group = groups.get(key) ?? { city, state, count: 0, neighborhoods: new Set<string>(), postalCodes: new Set<string>() }
+    group.count += 1
+    if (business.neighborhood) group.neighborhoods.add(business.neighborhood)
+    if (business.postal_code) group.postalCodes.add(business.postal_code)
+    groups.set(key, group)
+  })
+  return [...groups.entries()].map(([key, group]) => ({
+    key,
+    city: group.city,
+    state: group.state,
+    count: group.count,
+    neighborhoods: [...group.neighborhoods].sort(),
+    postalCodes: [...group.postalCodes].sort(),
+  })).sort((a, b) => b.count - a.count || a.city.localeCompare(b.city))
 }
 
-/** Curated business rail: explicitly featured first, then strong directory profiles. */
 export function featuredBusinesses(businesses: readonly DirectoryBusiness[]): DirectoryBusiness[] {
   return [...businesses]
     .filter(business => business.featured || Number(business.rating || 0) >= 4.5)
@@ -179,33 +233,28 @@ export function featuredBusinesses(businesses: readonly DirectoryBusiness[]): Di
     .slice(0, 8)
 }
 
+export function mapReadyBusinesses(businesses: readonly DirectoryBusiness[]) {
+  return businesses.filter(business => business.latitude != null && business.longitude != null)
+}
+
 export function singleCity(businesses: readonly DirectoryBusiness[]): string | null {
-  const cities = new Set(
-    businesses.map(business => (business.city || '').trim()).filter(city => city.length > 0),
-  )
+  const cities = new Set(businesses.map(business => business.city.trim()).filter(Boolean))
   return cities.size === 1 ? [...cities][0] : null
 }
 
 export function distinctImageCount(businesses: readonly DirectoryBusiness[]): number {
-  return new Set(
-    businesses.map(business => business.image_url).filter((url): url is string => Boolean(url)),
-  ).size
+  return new Set(businesses.map(business => business.image_url).filter((url): url is string => Boolean(url))).size
 }
 
-export type DirectoryResult = {
-  businesses: DirectoryBusiness[]
-  error: string | null
-}
+export type DirectoryResult = { businesses: DirectoryBusiness[]; error: string | null }
 
-/** Reads the published directory and strips event-only records before returning it. */
 export async function fetchDirectory(client: TypedSupabaseClient): Promise<DirectoryResult> {
   const { data, error } = await client
-    .from('black_pages_directory')
+    .from('black_pages_directory_v2')
     .select('*')
     .order('featured', { ascending: false })
     .order('rating', { ascending: false, nullsFirst: false })
     .order('business_name')
-
   if (error) return { businesses: [], error: 'The live business directory could not be loaded.' }
   return { businesses: normalizeDirectoryRows(data).filter(isBusinessListing), error: null }
 }
@@ -215,27 +264,13 @@ export async function fetchSavedDirectoryIds(client: TypedSupabaseClient, userAu
   return (data ?? []).map(item => item.directory_id)
 }
 
-export async function addFavorite(
-  client: TypedSupabaseClient,
-  userAuthId: string,
-  directoryId: string,
-): Promise<{ error: boolean }> {
-  const { error } = await client
-    .from('black_pages_favorites')
-    .insert({ user_auth_id: userAuthId, directory_id: directoryId })
+export async function addFavorite(client: TypedSupabaseClient, userAuthId: string, directoryId: string): Promise<{ error: boolean }> {
+  const { error } = await client.from('black_pages_favorites').insert({ user_auth_id: userAuthId, directory_id: directoryId })
   return { error: Boolean(error) }
 }
 
-export async function removeFavorite(
-  client: TypedSupabaseClient,
-  userAuthId: string,
-  directoryId: string,
-): Promise<{ error: boolean }> {
-  const { error } = await client
-    .from('black_pages_favorites')
-    .delete()
-    .eq('user_auth_id', userAuthId)
-    .eq('directory_id', directoryId)
+export async function removeFavorite(client: TypedSupabaseClient, userAuthId: string, directoryId: string): Promise<{ error: boolean }> {
+  const { error } = await client.from('black_pages_favorites').delete().eq('user_auth_id', userAuthId).eq('directory_id', directoryId)
   return { error: Boolean(error) }
 }
 
@@ -247,19 +282,13 @@ export type ClaimSubmission = {
   roleAtBusiness: string
 }
 
-export async function submitOwnerClaim(
-  client: TypedSupabaseClient,
-  claim: ClaimSubmission,
-): Promise<{ error: string | null }> {
-  const { error } = await client.from('black_pages_claims').upsert(
-    {
-      directory_id: claim.directoryId,
-      claimant_auth_id: claim.claimantAuthId,
-      claimant_name: claim.claimantName,
-      claimant_email: claim.claimantEmail,
-      role_at_business: claim.roleAtBusiness,
-    },
-    { onConflict: 'directory_id,claimant_auth_id' },
-  )
+export async function submitOwnerClaim(client: TypedSupabaseClient, claim: ClaimSubmission): Promise<{ error: string | null }> {
+  const { error } = await client.from('black_pages_claims').upsert({
+    directory_id: claim.directoryId,
+    claimant_auth_id: claim.claimantAuthId,
+    claimant_name: claim.claimantName,
+    claimant_email: claim.claimantEmail,
+    role_at_business: claim.roleAtBusiness,
+  }, { onConflict: 'directory_id,claimant_auth_id' })
   return { error: error ? error.message : null }
 }

@@ -1,12 +1,4 @@
-/**
- * Hand-written stand-in for `supabase gen types typescript`.
- *
- * This session has no Supabase CLI credentials, so these definitions were
- * derived strictly from the relations THE BLACK PAGES app actually reads and
- * writes (see `src/services/directory.ts`) plus the view/table definitions
- * committed under `supabase/migrations/`. No speculative columns are declared:
- * regenerate this file with the CLI once credentials are available.
- */
+/** Minimal generated-style database types for THE BLACK PAGES client surface. */
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
@@ -14,18 +6,9 @@ export type Database = {
   public: {
     Tables: {
       black_pages_favorites: {
-        Row: {
-          user_auth_id: string
-          directory_id: string
-        }
-        Insert: {
-          user_auth_id: string
-          directory_id: string
-        }
-        Update: {
-          user_auth_id?: string
-          directory_id?: string
-        }
+        Row: { user_auth_id: string; directory_id: string }
+        Insert: { user_auth_id: string; directory_id: string }
+        Update: { user_auth_id?: string; directory_id?: string }
         Relationships: []
       }
       black_pages_claims: {
@@ -52,14 +35,61 @@ export type Database = {
         }
         Relationships: []
       }
+      black_pages_categories: {
+        Row: {
+          slug: string
+          name: string
+          description: string | null
+          sort_order: number
+          active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          slug: string
+          name: string
+          description?: string | null
+          sort_order?: number
+          active?: boolean
+        }
+        Update: {
+          slug?: string
+          name?: string
+          description?: string | null
+          sort_order?: number
+          active?: boolean
+        }
+        Relationships: []
+      }
+      black_pages_subcategories: {
+        Row: {
+          category_slug: string
+          slug: string
+          name: string
+          target_per_city: number
+          active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          category_slug: string
+          slug: string
+          name: string
+          target_per_city?: number
+          active?: boolean
+        }
+        Update: {
+          category_slug?: string
+          slug?: string
+          name?: string
+          target_per_city?: number
+          active?: boolean
+        }
+        Relationships: []
+      }
     }
     Views: {
-      /**
-       * `public.black_pages_directory` — union of published `gt_venues` rows
-       * and approved `black_pages_listings` rows. Read-only for anon and
-       * authenticated roles.
-       */
-      black_pages_directory: {
+      black_pages_directory_v2: {
         Row: {
           directory_id: string
           source_type: string
@@ -69,14 +99,15 @@ export type Database = {
           category: string
           subcategory: string | null
           city: string
-          /** Null for cities the view has no state mapping for. */
           state: string | null
           neighborhood: string | null
           address: string | null
+          postal_code: string | null
           short_description: string | null
           website_url: string | null
           instagram_handle: string | null
           phone: string | null
+          business_email: string | null
           image_url: string | null
           latitude: number | null
           longitude: number | null
@@ -87,6 +118,14 @@ export type Database = {
           ownership_status: string
           owner_verified: boolean
           tags: string[] | null
+          hours: Json | null
+          service_area: string | null
+          specialties: string[] | null
+          facebook_url: string | null
+          linkedin_url: string | null
+          tiktok_url: string | null
+          serves_customers_at_location: boolean
+          service_radius_miles: number | null
         }
         Relationships: []
       }
@@ -97,5 +136,4 @@ export type Database = {
   }
 }
 
-/** Raw row shape returned by PostgREST for the directory view. */
-export type DirectoryRow = Database['public']['Views']['black_pages_directory']['Row']
+export type DirectoryRow = Database['public']['Views']['black_pages_directory_v2']['Row']

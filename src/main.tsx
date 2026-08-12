@@ -9,6 +9,7 @@ import './styles.css'
 import './current-media.css'
 import './categories.css'
 import './directory-ui.css'
+import './location-intelligence.css'
 
 publishBuildInfo()
 

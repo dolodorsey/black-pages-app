@@ -1,0 +1,56 @@
+/* THE BLACK PAGES — master taxonomy, location intelligence, and full business submission UX. */
+
+.directory-near-me{height:44px;border:1px solid #d9cec0;border-radius:12px;background:#fff;color:#82540f;display:flex;align-items:center;justify-content:center;gap:7px;font-size:9px;font-weight:900}
+.directory-near-me.active{background:#f1e2c4;border-color:#d0aa62;color:#5f3b08}
+.directory-search-panel.compact .directory-near-me{height:38px}
+
+.location-browser{padding-top:22px!important;color:var(--directory-ink)}
+.location-browser .section-title h2{color:var(--directory-ink)}
+.location-browser .section-title>div>span{color:#9a6718}
+.location-city-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:0 14px}
+.location-city-card{border:1px solid var(--directory-line);border-radius:16px;background:#fff;overflow:hidden;box-shadow:0 7px 18px rgba(39,28,13,.04)}
+.location-city-main{width:100%;border:0;background:#fff;color:var(--directory-ink);padding:13px;display:grid;grid-template-columns:34px 1fr 16px;gap:8px;align-items:center;text-align:left}
+.location-pin{width:34px;height:34px;border-radius:10px;background:var(--directory-gold-soft);color:#8d5b10;display:grid;place-items:center}
+.location-city-main>span:nth-child(2){display:grid;gap:3px;min-width:0}
+.location-city-main strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.location-city-main small{font-size:8px;color:var(--directory-muted)}
+.location-city-main>svg{color:#b0a69a}
+.location-drilldown{padding:0 9px 10px;display:flex;gap:5px;flex-wrap:wrap}
+.location-drilldown button{border:1px solid #e5ded4;border-radius:99px;background:#faf8f4;color:#6f6457;padding:6px 8px;font-size:7px}
+.location-drilldown button.zip-chip{background:#f3e7d0;color:#80510d;border-color:#e2cda4;font-weight:800}
+
+.directory-application-modal{background:#f7f4ee!important;color:#19140f!important;padding:28px 18px calc(32px + env(safe-area-inset-bottom))!important}
+.directory-application-modal>.eyebrow{color:#936019!important}
+.directory-application-modal>h2{color:#17120d!important;font:650 35px/.98 'Playfair Display',serif!important}
+.directory-application-modal>p{color:#70675d!important}
+.application-section{margin-top:17px;padding:15px;border:1px solid #ded7cc;border-radius:17px;background:#fff}
+.application-section-title{display:flex;align-items:center;gap:9px;margin-bottom:7px;color:#8d5b12}
+.application-section-title>svg{width:19px;height:19px}
+.application-section-title>div{display:grid;gap:2px}
+.application-section-title strong{font-size:11px;color:#211a13}
+.application-section-title small{font-size:8px;color:#81776c}
+.directory-application-modal label{color:#7a551d!important}
+.directory-application-modal input,.directory-application-modal select,.directory-application-modal textarea{background:#fbfaf7!important;color:#1a1510!important;border-color:#ddd5c9!important}
+.directory-application-modal input::placeholder,.directory-application-modal textarea::placeholder{color:#a49a8e}
+.directory-application-modal select:disabled{opacity:.55}
+.directory-application-modal textarea{min-height:92px!important}
+.location-toggle{margin:10px 0 5px!important;padding:10px!important;border:1px solid #e8e0d5;border-radius:11px;background:#fbfaf7}
+.label-with-icon{display:flex;align-items:center;gap:5px}
+.ownership-section{border-color:#d8bd89;background:#fffaf0}
+.application-submit{width:100%;margin-top:18px!important}
+
+.business-specialties{margin:15px 0;padding:14px;border:1px solid #e3dbcf;border-radius:14px;background:#fbf9f5}
+.business-specialties>strong,.business-detail-row>strong{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#85550d;margin-bottom:8px}
+.business-specialties>div{display:flex;flex-wrap:wrap;gap:5px}
+.business-specialties span{font-size:8px;padding:6px 8px;border-radius:99px;background:#efe4d2;color:#5f5141}
+.business-detail-row{margin:10px 0;padding:13px;border:1px solid #e3dbcf;border-radius:13px;background:#fff}
+.business-detail-row>span{font-size:10px;line-height:1.5;color:#665e55}
+.distance-note{margin:-7px 0 14px;padding:8px 10px;border-radius:10px;background:#eee2ca;color:#6f470c;font-size:8px;font-weight:800}
+.directory-quick-contact{grid-template-columns:repeat(3,1fr)!important}
+.directory-quick-contact a{min-height:62px!important}
+
+@media(max-width:430px){
+  .location-city-grid{grid-template-columns:1fr}
+  .directory-quick-contact{grid-template-columns:repeat(2,1fr)!important}
+  .directory-application-modal .form-grid{grid-template-columns:1fr!important}
+}

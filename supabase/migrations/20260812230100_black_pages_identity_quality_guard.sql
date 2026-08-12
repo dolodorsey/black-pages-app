@@ -1,4 +1,4 @@
--- Identity-quality guard: generic placeholder labels must never merge unrelated records.
+-- Identity-quality guard: generic placeholder labels must never gain evidence from name+city grouping.
 create or replace function public.black_pages_identity_name_is_generic(p_value text)
 returns boolean language sql immutable as $$
   select public.black_pages_norm_business_name(p_value) in (
@@ -28,7 +28,7 @@ returns text language sql immutable as $$
       public.black_pages_identity_name_is_generic(p_name) generic_name
   )
   select case
-    when generic_name then 'candidate:'||md5(concat_ws('|',coalesce(p_name,''),coalesce(p_city,''),coalesce(p_state,''),coalesce(p_website,''),coalesce(p_phone,''),coalesce(p_email,''),random()::text))
+    when generic_name then 'generic:'||md5(concat_ws('|',coalesce(p_name,''),coalesce(p_city,''),coalesce(p_state,''),coalesce(p_website,''),coalesce(p_phone,''),coalesce(p_email,'')))
     when name_key<>'' and city_key<>'' then 'name_city:'||name_key||'|'||city_key||'|'||state_key
     when name_key<>'' and domain_key<>'' then 'name_web:'||name_key||'|'||domain_key
     when name_key<>'' and phone_key<>'' then 'name_phone:'||name_key||'|'||phone_key

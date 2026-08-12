@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, ChevronRight, Database as DatabaseIcon, Ma
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '../lib/database.types.ts'
 import { fetchCoverageSnapshot, launchFindNow, type CoverageCell, type CoverageSnapshot, type FindNowResult } from '../services/coverage.ts'
+import { VerificationLane } from './VerificationLane.tsx'
 import './CoverageDashboard.css'
 
 type StatusFilter = 'all' | 'empty' | 'candidate_found' | 'covered'
@@ -95,6 +96,8 @@ export function CoverageDashboard({ supabase }: { supabase: SupabaseClient<Datab
       {findError && <div className="find-now-error"><AlertTriangle size={16} /> {findError}</div>}
       {findResult && <div className="find-now-result"><CheckCircle2 size={17} /><div><strong>Bulk discovery launched.</strong><span>{findResult.external_queue?.jobs_queued || 0} external page jobs queued · up to {findResult.quantity.toLocaleString()} businesses requested.</span><small>{findResult.classification?.classified_total || 0} existing candidates auto-classified during launch. New records route to verification before publication.</small></div></div>}
     </section>
+
+    <VerificationLane supabase={supabase} city={city} />
 
     <section className="coverage-category-health">
       <div className="coverage-section-title"><span>CATEGORY PRESSURE</span><h2>Where the directory is thinnest.</h2></div>

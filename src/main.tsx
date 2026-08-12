@@ -8,6 +8,7 @@ import { publishBuildInfo } from './lib/build-info'
 import './styles.css'
 import './current-media.css'
 import './categories.css'
+import './directory-ui.css'
 
 publishBuildInfo()
 

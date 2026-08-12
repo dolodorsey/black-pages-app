@@ -1,73 +1,71 @@
 import { ChevronRight, Grid2X2, Search } from 'lucide-react'
-import { labelCategory, labelSubcategory, pluralize } from '../lib/categories'
-import {
-  countBySubcategory,
-  type CategoryCount,
-  type DirectoryBusiness,
-  type SubcategoryCount,
-} from '../services/directory'
+import { pluralize } from '../lib/categories.ts'
+import { countBySubcategory, type CategoryCount, type DirectoryBusiness } from '../services/directory.ts'
+import { subcategoriesFor, type TaxonomyCategory, type TaxonomySubcategory } from '../services/taxonomy.ts'
 
 function categoryGlyph(key: string) {
-  const value = key.toLowerCase()
-  if (value.includes('restaurant') || value.includes('brunch') || value.includes('food')) return '🍽'
-  if (value.includes('beauty') || value.includes('spa') || value.includes('wellness')) return '✦'
-  if (value.includes('nightclub') || value.includes('lounge') || value.includes('bar')) return '◐'
-  if (value.includes('shop') || value.includes('retail')) return '◆'
-  if (value.includes('culture') || value.includes('jazz') || value.includes('comedy')) return '◈'
-  if (value.includes('fitness')) return '▲'
-  if (value.includes('business') || value.includes('professional')) return '▣'
+  if (key.includes('food')) return '🍽'
+  if (key.includes('beauty')) return '✦'
+  if (key.includes('nightlife')) return '◐'
+  if (key.includes('retail') || key.includes('fashion')) return '◆'
+  if (key.includes('culture') || key.includes('creative')) return '◈'
+  if (key.includes('fitness')) return '▲'
+  if (key.includes('technology')) return '⌘'
+  if (key.includes('legal')) return '§'
+  if (key.includes('real-estate')) return '⌂'
+  if (key.includes('construction') || key.includes('home')) return '▰'
   return '●'
 }
 
-/** Full business-category index with nested subcategories. */
-export function CategoryBrowser({ businesses, categories, onBrowse }: {
+export function CategoryBrowser({ businesses, taxonomyCategories, taxonomySubcategories, counts, onBrowse }: {
   businesses: readonly DirectoryBusiness[]
-  categories: readonly CategoryCount[]
+  taxonomyCategories: readonly TaxonomyCategory[]
+  taxonomySubcategories: readonly TaxonomySubcategory[]
+  counts: readonly CategoryCount[]
   onBrowse: (category: string, subcategory?: string) => void
 }) {
+  const categoryTotals = new Map(counts)
   return <section className="categories-screen directory-page">
     <div className="directory-page-heading">
-      <span><Grid2X2 size={14} /> BUSINESS CATEGORIES</span>
-      <h1>Browse by category.</h1>
-      <p>Start broad, then narrow to the exact business type you need.</p>
+      <span><Grid2X2 size={14} /> MASTER BUSINESS INDEX</span>
+      <h1>Browse every business category.</h1>
+      <p>{pluralize(taxonomyCategories.length, 'category', 'categories')} with hundreds of specific business types. Categories remain available as national coverage grows.</p>
       <button className="directory-heading-action" onClick={() => onBrowse('all', 'all')}><Search size={16} /> Search all businesses</button>
     </div>
 
     <div className="category-directory-list">
-      {categories.map(([key, count]) => {
-        const subcategories = countBySubcategory(businesses, key)
-        return <article className="category-directory-card" key={key}>
-          <button className="category-directory-header" onClick={() => onBrowse(key, 'all')}>
-            <span className="category-directory-icon">{categoryGlyph(key)}</span>
-            <span className="category-directory-copy">
-              <strong>{labelCategory(key)}</strong>
-              <small>{pluralize(count, 'business', 'businesses')}</small>
-            </span>
+      {taxonomyCategories.map(category => {
+        const masterSubcategories = subcategoriesFor(taxonomySubcategories, category.slug)
+        const liveCounts = new Map(countBySubcategory(businesses, category.slug))
+        const count = categoryTotals.get(category.slug) || 0
+        return <article className="category-directory-card" key={category.slug}>
+          <button className="category-directory-header" onClick={() => onBrowse(category.slug, 'all')}>
+            <span className="category-directory-icon">{categoryGlyph(category.slug)}</span>
+            <span className="category-directory-copy"><strong>{category.name}</strong><small>{pluralize(count, 'business', 'businesses')} · {pluralize(masterSubcategories.length, 'type')}</small></span>
             <span className="category-view-all">View all <ChevronRight size={17} /></span>
           </button>
-
-          {subcategories.length > 0 && <div className="subcategory-grid" aria-label={`${labelCategory(key)} subcategories`}>
-            {subcategories.map(([subcategory, subCount]) => <button key={subcategory} onClick={() => onBrowse(key, subcategory)}>
-              <span>{labelSubcategory(subcategory)}</span>
-              <small>{subCount}</small>
+          <div className="subcategory-grid" aria-label={`${category.name} subcategories`}>
+            {masterSubcategories.map(item => <button key={item.slug} onClick={() => onBrowse(category.slug, item.slug)}>
+              <span>{item.name}</span><small>{liveCounts.get(item.slug) || 0}</small>
             </button>)}
-          </div>}
+          </div>
         </article>
       })}
     </div>
   </section>
 }
 
-export function SubcategoryFilterRail({ subcategories, subcategory, onSubcategoryChange }: {
-  subcategories: readonly SubcategoryCount[]
+export function SubcategoryFilterRail({ subcategories, liveCounts, subcategory, onSubcategoryChange }: {
+  subcategories: readonly TaxonomySubcategory[]
+  liveCounts: ReadonlyMap<string, number>
   subcategory: string
   onSubcategoryChange: (value: string) => void
 }) {
   if (subcategories.length === 0) return null
   return <div className="filter-rail subcategory-filter-rail" aria-label="Business type filter">
     <button className={subcategory === 'all' ? 'active' : ''} onClick={() => onSubcategoryChange('all')}>All types</button>
-    {subcategories.map(([key, count]) => <button className={subcategory === key ? 'active' : ''} key={key} onClick={() => onSubcategoryChange(key)}>
-      {labelSubcategory(key)} <small>{count}</small>
+    {subcategories.map(item => <button className={subcategory === item.slug ? 'active' : ''} key={item.slug} onClick={() => onSubcategoryChange(item.slug)}>
+      {item.name} <small>{liveCounts.get(item.slug) || 0}</small>
     </button>)}
   </div>
 }

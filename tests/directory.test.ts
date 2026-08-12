@@ -41,7 +41,7 @@ test('normalizeDirectoryRows tolerates a null payload', () => {
 
 const directory = normalizeDirectoryRows([
   baseRow,
-  makeRow({ directory_id: 'venue:2', business_name: 'Westside Beauty Bar', category: 'beauty-wellness', subcategory: 'natural_salon', neighborhood: 'West End', postal_code: '30310', short_description: 'Braids and locs.', rating: 4.6, featured: false, tags: ['locs'], specialties: ['Natural hair'] }),
+  makeRow({ directory_id: 'venue:2', business_name: 'Westside Beauty Bar', category: 'beauty-wellness', subcategory: 'natural_salon', neighborhood: 'West End', address: '742 Ralph David Abernathy Blvd, Atlanta, GA 30310', postal_code: '30310', short_description: 'Braids and locs.', rating: 4.6, featured: false, tags: ['locs'], specialties: ['Natural hair'] }),
   makeRow({ directory_id: 'listing:3', source_type: 'listing', business_name: 'Peachtree Tech Repair', category: 'technology', subcategory: 'computer-repair', city: 'Decatur', state: 'GA', neighborhood: null, address: null, postal_code: '30030', short_description: 'Phone and laptop repair.', latitude: null, longitude: null, rating: null, featured: false, tags: ['technology', 'repair'], specialties: ['Laptop repair'] }),
 ])
 

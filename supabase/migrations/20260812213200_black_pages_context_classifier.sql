@@ -50,5 +50,3 @@ begin
 end $$;
 revoke all on function public.black_pages_context_classify_batch(integer) from public,anon,authenticated;
 grant execute on function public.black_pages_context_classify_batch(integer) to authenticated,service_role;
-
-select public.black_pages_context_classify_batch(30000);

@@ -67,9 +67,14 @@ function arrayValue(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item)) : []
 }
 
+function coverageStatus(value: unknown): CoverageCell['coverage_status'] {
+  if (value === 'covered' || value === 'candidate_found') return value
+  return 'empty'
+}
+
 function parseSnapshot(value: Json): CoverageSnapshot {
   const root = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, Json | undefined> : {}
-  const cities = arrayValue(root.cities).map(item => ({
+  const cities: CoverageCity[] = arrayValue(root.cities).map(item => ({
     city: String(item.city || ''), state: String(item.state || ''), launch_priority: numberValue(item.launch_priority),
     taxonomy_cells: numberValue(item.taxonomy_cells), target_met_cells: numberValue(item.target_met_cells),
     candidate_found_cells: numberValue(item.candidate_found_cells), empty_cells: numberValue(item.empty_cells),
@@ -77,14 +82,14 @@ function parseSnapshot(value: Json): CoverageSnapshot {
     candidate_slots: numberValue(item.candidate_slots), remaining_gap: numberValue(item.remaining_gap),
     taxonomy_coverage_pct: numberValue(item.taxonomy_coverage_pct),
   }))
-  const cells = arrayValue(root.cells).map(item => ({
+  const cells: CoverageCell[] = arrayValue(root.cells).map(item => ({
     city: String(item.city || ''), state: String(item.state || ''), launch_priority: numberValue(item.launch_priority),
     category_slug: String(item.category_slug || ''), category_name: String(item.category_name || ''),
     subcategory_slug: String(item.subcategory_slug || ''), subcategory_name: String(item.subcategory_name || ''),
     target_count: numberValue(item.target_count), saturation_target: numberValue(item.saturation_target),
     published_count: numberValue(item.published_count), candidate_count: numberValue(item.candidate_count),
     gap_count: numberValue(item.gap_count), discovery_gap: numberValue(item.discovery_gap),
-    coverage_status: item.coverage_status === 'covered' || item.coverage_status === 'candidate_found' ? item.coverage_status : 'empty',
+    coverage_status: coverageStatus(item.coverage_status),
     coverage_pct: numberValue(item.coverage_pct), priority_score: numberValue(item.priority_score), city_launch_target: numberValue(item.city_launch_target),
   }))
   const enrichmentRaw = root.enrichment && typeof root.enrichment === 'object' && !Array.isArray(root.enrichment) ? root.enrichment as Record<string, Json | undefined> : {}

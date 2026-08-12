@@ -1,0 +1,85 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import * as cheerio from "npm:cheerio@1.0.0";
+
+type Job = { id:string; source_key:string; request_url:string; city:string|null; state:string|null; page_offset:number };
+
+type ExternalItem = { business_name:string; city:string; state:string; postal_code:string; address:string; source_category:string; source_subcategory:string; detail_url:string; description:string; source_key:string };
+
+const json = (body:unknown,status=200) => new Response(JSON.stringify(body),{status,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
+
+function parseAddress(raw:string,cityHint:string|null,stateHint:string|null) {
+  const address = raw.replace(/\s+/g,' ').trim();
+  const m = address.match(/(?:,\s*)?([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)\b/);
+  return { address, city:m?.[1]?.trim() || cityHint || '', state:m?.[2] || stateHint || '', postal_code:m?.[3] || '' };
+}
+
+function parseIAmBlackBusiness(html:string,job:Job):ExternalItem[] {
+  const $ = cheerio.load(html);
+  const items:ExternalItem[] = [];
+  $('h3').each((index,element) => {
+    const heading = $(element);
+    const rawName = heading.text().replace(/\s+/g,' ').trim();
+    const businessName = rawName.replace(/^\d+\.\s*/,'').trim();
+    if (!businessName || businessName.length > 220) return;
+    let container = heading.closest('article,li,[class*="geodir"],.listing,.card,.row');
+    if (!container.length || container.text().length > 5000) container = heading.parent().parent();
+    const detailUrl = heading.find('a').first().attr('href') || '';
+    const mapLink = container.find('a[href*="maps.google"]').first();
+    let addressText = mapLink.text().replace(/\s+/g,' ').trim();
+    const fullText = container.text().replace(/\s+/g,' ').trim();
+    if (!addressText) {
+      const addressMatch = fullText.match(/\b\d{1,6}\s+[^|]{3,120}?,\s*[A-Za-z .'-]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/);
+      addressText = addressMatch?.[0] || '';
+    }
+    const parsed = parseAddress(addressText,job.city,job.state);
+    const categoryLinks = container.find('a').toArray().map(a => ({ text:$(a).text().replace(/\s+/g,' ').trim(), href:$(a).attr('href') || '' }))
+      .filter(a => a.text && a.text !== businessName && !a.href.includes('maps.google') && (/category/i.test(a.href) || /filter=/i.test(a.href)));
+    let sourceCategory = categoryLinks.at(-2)?.text || '';
+    let sourceSubcategory = categoryLinks.at(-1)?.text || '';
+    if (!sourceCategory || !sourceSubcategory) {
+      const catMatch = fullText.match(/([A-Za-z][A-Za-z &/-]{2,50})\s*›\s*([A-Za-z][A-Za-z &/-]{2,50})/);
+      sourceCategory ||= catMatch?.[1]?.trim() || '';
+      sourceSubcategory ||= catMatch?.[2]?.trim() || '';
+    }
+    const description = fullText.replace(rawName,'').replace(addressText,'').replace(sourceCategory,'').replace(sourceSubcategory,'').replace(/\s+/g,' ').trim().slice(0,1000);
+    const key = detailUrl || `${job.page_offset}:${index}:${businessName.toLowerCase().replace(/[^a-z0-9]+/g,'-')}`;
+    items.push({ business_name:businessName, city:parsed.city, state:parsed.state, postal_code:parsed.postal_code, address:parsed.address, source_category:sourceCategory, source_subcategory:sourceSubcategory, detail_url:detailUrl, description, source_key:key.slice(0,180) });
+  });
+  return items.slice(0,20);
+}
+
+async function processJob(supabase:ReturnType<typeof createClient>,job:Job) {
+  try {
+    const response = await fetch(job.request_url,{headers:{'User-Agent':'TheBlackPagesDirectoryResearch/1.0 (+public directory indexing)','Accept':'text/html,application/xhtml+xml'},signal:AbortSignal.timeout(12000),redirect:'follow'});
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const html = await response.text();
+    const items = parseIAmBlackBusiness(html,job);
+    const { data,error } = await supabase.rpc('black_pages_complete_external_job',{p_job_id:job.id,p_items:items,p_error:null});
+    if (error) throw error;
+    return { job_id:job.id, found:items.length, result:data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'external_discovery_failed';
+    await supabase.rpc('black_pages_complete_external_job',{p_job_id:job.id,p_items:[],p_error:message});
+    return { job_id:job.id, error:message };
+  }
+}
+
+Deno.serve(async request => {
+  if (request.method !== 'POST') return json({error:'Method not allowed'},405);
+  const url=Deno.env.get('SUPABASE_URL'); const key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!url || !key) return json({error:'Worker environment incomplete'},500);
+  const supabase=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
+  const token=request.headers.get('x-worker-token') || '';
+  const {data:authorized,error:authError}=await supabase.rpc('black_pages_authorize_worker_token',{p_token:token});
+  if (authError || authorized !== true) return json({error:'Unauthorized'},401);
+  let payload:{jobs?:number}={}; try{payload=await request.json()}catch{payload={}}
+  const limit=Math.min(20,Math.max(1,Number(payload.jobs)||10));
+  const {data:claim,error:claimError}=await supabase.rpc('black_pages_claim_external_jobs',{p_limit:limit});
+  if (claimError) return json({error:claimError.message},500);
+  const jobs=Array.isArray(claim?.jobs) ? claim.jobs as Job[] : [];
+  if (!jobs.length) return json({ok:true,claimed:0,processed:0});
+  const settled=await Promise.allSettled(jobs.map(job=>processJob(supabase,job)));
+  const outcomes=settled.map(item=>item.status==='fulfilled'?item.value:{error:String(item.reason)});
+  return json({ok:true,claimed:jobs.length,processed:outcomes.length,outcomes});
+});

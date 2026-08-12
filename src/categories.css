@@ -1,0 +1,26 @@
+.bottom-nav{grid-template-columns:repeat(6,1fr)}
+.bottom-nav button{font-size:7px}
+
+.categories-screen{padding:28px 16px 34px;animation:fade .35s ease both}
+.categories-heading p{max-width:410px;line-height:1.6}
+.category-directory-list{display:grid;gap:12px}
+.category-directory-card{border:1px solid var(--line);border-radius:21px;background:linear-gradient(155deg,#17130f,#0a0806 74%);overflow:hidden;box-shadow:0 15px 38px rgba(0,0,0,.2)}
+.category-directory-header{width:100%;min-height:88px;padding:15px 16px;border:0;background:transparent;color:#fff;display:grid;grid-template-columns:48px 1fr 22px;align-items:center;gap:12px;text-align:left}
+.category-directory-icon{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;background:rgba(244,212,143,.1);border:1px solid rgba(244,212,143,.13);color:var(--gold-bright);font-size:20px}
+.category-directory-copy{display:grid;gap:4px}
+.category-directory-copy strong{font:600 20px/1.05 'Playfair Display',serif;letter-spacing:-.025em}
+.category-directory-copy small{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.055em}
+.category-directory-header>svg{color:#756b5e}
+.subcategory-grid{display:flex;flex-wrap:wrap;gap:7px;padding:0 15px 16px 75px}
+.subcategory-grid button{min-height:34px;padding:7px 9px 7px 11px;border:1px solid rgba(255,255,255,.09);border-radius:99px;background:#0d0b08;color:#d4cdc3;display:inline-flex;align-items:center;gap:7px;font-size:8px}
+.subcategory-grid button:hover{border-color:rgba(244,212,143,.28);color:var(--gold-bright)}
+.subcategory-grid button small{min-width:20px;height:20px;padding:0 5px;border-radius:99px;background:rgba(244,212,143,.1);color:var(--gold-bright);display:grid;place-items:center;font-size:7px}
+
+.subcategory-filter-rail{top:184px;z-index:10;padding-top:0;padding-bottom:16px;background:linear-gradient(180deg,#070706 72%,rgba(7,7,6,.92) 90%,transparent)}
+.subcategory-filter-rail button{border-style:dashed}
+.subcategory-filter-rail button.active{border-style:solid}
+
+@media(max-width:380px){
+  .bottom-nav button{font-size:6.5px}
+  .subcategory-grid{padding-left:15px}
+}

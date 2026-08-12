@@ -20,6 +20,9 @@ export const categoryLabels: Record<string, string> = {
   wellness: 'Wellness',
   special_events: 'Events',
   day_party: 'Day Parties',
+  event_venue: 'Event Venues',
+  sports_bar: 'Sports Bars',
+  business: 'Business Services',
 }
 
 /** Categories offered on the "list a business" application form. */
@@ -36,8 +39,33 @@ export const listingCategories = [
   'Education',
 ]
 
+/**
+ * Stable comparison key for taxonomy values coming from multiple directory
+ * sources. It intentionally collapses casing, spaces, punctuation and
+ * underscores so values such as `soul_food`, `Soul Food`, and `soul-food`
+ * behave as one subcategory in navigation and filtering.
+ */
+export function taxonomyKey(value: string | null | undefined): string {
+  return (value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[’']/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
 export function labelCategory(value: string) {
   return categoryLabels[value] || value.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
+}
+
+export function labelSubcategory(value: string) {
+  return value
+    .replaceAll('_', ' ')
+    .replaceAll('-', ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, character => character.toUpperCase())
 }
 
 /**

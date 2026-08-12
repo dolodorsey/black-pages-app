@@ -7,6 +7,7 @@
  * testable under `node --test` without a browser or network.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { taxonomyKey } from '../lib/categories'
 import type { Database, DirectoryRow } from '../lib/database.types'
 
 export type TypedSupabaseClient = SupabaseClient<Database>
@@ -45,9 +46,11 @@ export type DirectoryBusiness = {
 }
 
 export type CategoryCount = readonly [category: string, count: number]
+export type SubcategoryCount = readonly [subcategory: string, count: number]
 
 export type DirectoryFilter = {
   category: string
+  subcategory?: string
   query: string
 }
 
@@ -105,14 +108,33 @@ export function countByCategory(businesses: readonly DirectoryBusiness[]): Categ
   return [...counts.entries()].sort((a, b) => b[1] - a[1])
 }
 
-/** Category + free-text filter used by the discover screen. */
+/**
+ * Subcategory counts for a category. Values are grouped by their normalized
+ * taxonomy key so source variations do not create duplicate navigation items.
+ */
+export function countBySubcategory(
+  businesses: readonly DirectoryBusiness[],
+  category = 'all',
+): SubcategoryCount[] {
+  const counts = new Map<string, number>()
+  businesses.forEach(business => {
+    if (category !== 'all' && business.category !== category) return
+    const key = taxonomyKey(business.subcategory)
+    if (!key) return
+    counts.set(key, (counts.get(key) || 0) + 1)
+  })
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+}
+
+/** Category + subcategory + free-text filter used by the discover screen. */
 export function filterDirectory(
   businesses: readonly DirectoryBusiness[],
-  { category, query }: DirectoryFilter,
+  { category, subcategory = 'all', query }: DirectoryFilter,
 ): DirectoryBusiness[] {
   const needle = query.trim().toLowerCase()
   return businesses.filter(business => {
     const categoryMatch = category === 'all' || business.category === category
+    const subcategoryMatch = subcategory === 'all' || taxonomyKey(business.subcategory) === subcategory
     const searchMatch =
       !needle ||
       [
@@ -128,7 +150,7 @@ export function filterDirectory(
         .join(' ')
         .toLowerCase()
         .includes(needle)
-    return categoryMatch && searchMatch
+    return categoryMatch && subcategoryMatch && searchMatch
   })
 }
 

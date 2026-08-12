@@ -7,6 +7,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { publishBuildInfo } from './lib/build-info'
 import './styles.css'
 import './current-media.css'
+import './categories.css'
 
 publishBuildInfo()
 

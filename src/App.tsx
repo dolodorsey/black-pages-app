@@ -11,6 +11,7 @@ import {
   Heart,
   Home,
   Camera,
+  Layers3,
   LogIn,
   LogOut,
   Map as MapIcon,
@@ -27,15 +28,17 @@ import {
 import type { User } from '@supabase/supabase-js'
 import { BuildInfoBadge } from './components/BuildInfoBadge'
 import { BusinessCard } from './components/BusinessCard'
+import { CategoryBrowser, SubcategoryFilterRail } from './components/CategoryBrowser'
 import { CategoryFilterRail, CategoryRail, DirectorySearch, FloatingSearch } from './components/DirectoryControls'
 import { MapPanel } from './components/MapPanel'
 import { AppMark, EmptyState, Rating, StatusBadge } from './components/primitives'
-import { labelCategory, listingCategories, pluralize } from './lib/categories'
+import { labelCategory, labelSubcategory, listingCategories, pluralize } from './lib/categories'
 import { mapsUrl } from './lib/maps'
 import { getAppEnv, getSupabaseClient } from './lib/supabase'
 import {
   addFavorite,
   countByCategory,
+  countBySubcategory,
   featuredBusinesses,
   fetchDirectory,
   fetchSavedDirectoryIds,
@@ -47,7 +50,7 @@ import {
   type DirectoryBusiness,
 } from './services/directory'
 
-type Tab = 'home' | 'discover' | 'map' | 'saved' | 'profile'
+type Tab = 'home' | 'discover' | 'categories' | 'map' | 'saved' | 'profile'
 
 const emptyApplication = {
   businessName: '',
@@ -75,6 +78,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('home')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
+  const [subcategory, setSubcategory] = useState('all')
   const [selected, setSelected] = useState<DirectoryBusiness | null>(null)
   const [savedIds, setSavedIds] = useState<string[]>([])
   const [user, setUser] = useState<User | null>(null)
@@ -127,7 +131,11 @@ export default function App() {
   }, [toast])
 
   const categories = useMemo(() => countByCategory(businesses), [businesses])
-  const filtered = useMemo(() => filterDirectory(businesses, { category, query }), [businesses, category, query])
+  const subcategories = useMemo(() => countBySubcategory(businesses, category), [businesses, category])
+  const filtered = useMemo(
+    () => filterDirectory(businesses, { category, subcategory, query }),
+    [businesses, category, subcategory, query],
+  )
 
   const featured = featuredBusinesses(businesses)
   const hero = featured[0] || businesses[0]
@@ -216,8 +224,9 @@ export default function App() {
     setSelected(business)
   }
 
-  function goDiscover(nextCategory = 'all') {
+  function goDiscover(nextCategory = 'all', nextSubcategory = 'all') {
     setCategory(nextCategory)
+    setSubcategory(nextSubcategory)
     setTab('discover')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -253,7 +262,7 @@ export default function App() {
           <div><strong>{mapReadyCount}</strong><span>On the map</span></div>
         </section>
 
-        <CategoryRail categories={categories} onSelectCategory={goDiscover} onSeeAll={() => goDiscover()} />
+        <CategoryRail categories={categories} onSelectCategory={goDiscover} onSeeAll={() => setTab('categories')} />
 
         <section className="section-block dark-section">
           <div className="section-title"><div><span>TOP PROFILES</span><h2>{featuredCity ? `Popular in ${featuredCity}` : 'Popular right now'}</h2></div></div>
@@ -271,9 +280,12 @@ export default function App() {
       {tab === 'discover' && <section className="discover-screen">
         <div className="screen-heading"><span>DIRECTORY</span><h1>Find Black-owned.</h1><p>{pluralize(filtered.length, 'result')}{discoverCity ? ` across ${discoverCity}` : ''}</p></div>
         <DirectorySearch query={query} onQueryChange={setQuery} />
-        <CategoryFilterRail categories={categories} category={category} onCategoryChange={setCategory} />
-        {loading ? <EmptyState icon={<Sparkles />} title="Opening the directory" body="Loading the live Black business network." /> : error ? <EmptyState icon={<Building2 />} title="Directory unavailable" body={error} /> : filtered.length === 0 ? <EmptyState icon={<Search />} title="No matches yet" body="Try another category, neighborhood, or search." /> : <div className="business-grid">{filtered.map(business => <BusinessCard key={business.directory_id} business={business} saved={savedIds.includes(business.directory_id)} onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}</div>}
+        <CategoryFilterRail categories={categories} category={category} onCategoryChange={value => { setCategory(value); setSubcategory('all') }} />
+        {category !== 'all' && <SubcategoryFilterRail subcategories={subcategories} subcategory={subcategory} onSubcategoryChange={setSubcategory} />}
+        {loading ? <EmptyState icon={<Sparkles />} title="Opening the directory" body="Loading the live Black business network." /> : error ? <EmptyState icon={<Building2 />} title="Directory unavailable" body={error} /> : filtered.length === 0 ? <EmptyState icon={<Search />} title="No matches yet" body="Try another category, subcategory, neighborhood, or search." /> : <div className="business-grid">{filtered.map(business => <BusinessCard key={business.directory_id} business={business} saved={savedIds.includes(business.directory_id)} onOpen={() => openBusiness(business)} onSave={() => toggleFavorite(business.directory_id)} />)}</div>}
       </section>}
+
+      {tab === 'categories' && <CategoryBrowser businesses={businesses} categories={categories} onBrowse={goDiscover} />}
 
       {tab === 'map' && <MapPanel
         query={query}
@@ -305,6 +317,7 @@ export default function App() {
       {([
         ['home', Home, 'Home'],
         ['discover', Compass, 'Discover'],
+        ['categories', Layers3, 'Categories'],
         ['map', MapIcon, 'Map'],
         ['saved', Bookmark, 'Saved'],
         ['profile', UserRound, 'Profile'],
@@ -316,7 +329,7 @@ export default function App() {
         <button className="sheet-close" onClick={() => setSelected(null)}><X /></button>
         <div className="sheet-image">{selected.image_url ? <img src={selected.image_url} alt="" /> : <div className="image-fallback"><Store /></div>}<div className="image-shade" /><StatusBadge business={selected} /></div>
         <div className="sheet-copy">
-          <div className="card-meta"><span>{labelCategory(selected.category)}</span><Rating business={selected} /></div>
+          <div className="card-meta"><span>{labelCategory(selected.category)}{selected.subcategory ? ` · ${labelSubcategory(selected.subcategory)}` : ''}</span><Rating business={selected} /></div>
           <h2>{selected.business_name}</h2>
           <p>{selected.short_description || `Discover this Black-owned ${labelCategory(selected.category).toLowerCase()} business in ${selected.city}.`}</p>
           <div className="sheet-location"><MapPin size={16} /><span><strong>{selected.neighborhood || selected.city}</strong><small>{selected.address || `${selected.city}, ${selected.state}`}</small></span></div>

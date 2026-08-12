@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js'
 import { ArrowLeft, LockKeyhole } from 'lucide-react'
 import { CoverageDashboard } from './components/CoverageDashboard'
 import { getSupabaseClient } from './lib/supabase'
+import './CoverageCommandCenterHost.css'
 
 const staffRoles = new Set(['owner', 'admin', 'editor'])
 

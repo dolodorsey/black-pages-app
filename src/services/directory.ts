@@ -6,8 +6,8 @@
  * search, saved lists, or the public directory UI.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { labelCategory, labelSubcategory, taxonomyKey } from '../lib/categories'
-import type { Database, DirectoryRow } from '../lib/database.types'
+import { labelCategory, labelSubcategory, taxonomyKey } from '../lib/categories.ts'
+import type { Database, DirectoryRow } from '../lib/database.types.ts'
 
 export type TypedSupabaseClient = SupabaseClient<Database>
 

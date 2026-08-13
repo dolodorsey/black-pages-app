@@ -37,6 +37,7 @@ export function CategoryBrowser({ businesses, taxonomyCategories, taxonomySubcat
       {taxonomyCategories.map(category => {
         const masterSubcategories = subcategoriesFor(taxonomySubcategories, category.slug)
         const liveCounts = new Map(countBySubcategory(businesses, category.slug))
+        const liveSubcategories = masterSubcategories.filter(item => (liveCounts.get(item.slug) || 0) > 0)
         const count = categoryTotals.get(category.slug) || 0
         return <article className="category-directory-card" key={category.slug}>
           <button className="category-directory-header" onClick={() => onBrowse(category.slug, 'all')}>
@@ -44,11 +45,13 @@ export function CategoryBrowser({ businesses, taxonomyCategories, taxonomySubcat
             <span className="category-directory-copy"><strong>{category.name}</strong><small>{pluralize(count, 'business', 'businesses')} · {pluralize(masterSubcategories.length, 'type')}</small></span>
             <span className="category-view-all">View all <ChevronRight size={17} /></span>
           </button>
-          <div className="subcategory-grid" aria-label={`${category.name} subcategories`}>
-            {masterSubcategories.map(item => <button key={item.slug} onClick={() => onBrowse(category.slug, item.slug)}>
-              <span>{item.name}</span><small>{liveCounts.get(item.slug) || 0}</small>
-            </button>)}
-          </div>
+          {liveSubcategories.length > 0
+            ? <div className="subcategory-grid" aria-label={`${category.name} subcategories`}>
+                {liveSubcategories.map(item => <button key={item.slug} onClick={() => onBrowse(category.slug, item.slug)}>
+                  <span>{item.name}</span><small>{liveCounts.get(item.slug) || 0}</small>
+                </button>)}
+              </div>
+            : <div className="subcategory-empty"><strong>Listings coming soon</strong>Business types stay indexed behind the scenes and appear here as coverage is added.</div>}
         </article>
       })}
     </div>
@@ -61,10 +64,11 @@ export function SubcategoryFilterRail({ subcategories, liveCounts, subcategory, 
   subcategory: string
   onSubcategoryChange: (value: string) => void
 }) {
-  if (subcategories.length === 0) return null
+  const visibleSubcategories = subcategories.filter(item => (liveCounts.get(item.slug) || 0) > 0 || item.slug === subcategory)
+  if (visibleSubcategories.length === 0) return null
   return <div className="filter-rail subcategory-filter-rail" aria-label="Business type filter">
     <button className={subcategory === 'all' ? 'active' : ''} onClick={() => onSubcategoryChange('all')}>All types</button>
-    {subcategories.map(item => <button className={subcategory === item.slug ? 'active' : ''} key={item.slug} onClick={() => onSubcategoryChange(item.slug)}>
+    {visibleSubcategories.map(item => <button className={subcategory === item.slug ? 'active' : ''} key={item.slug} onClick={() => onSubcategoryChange(item.slug)}>
       {item.name} <small>{liveCounts.get(item.slug) || 0}</small>
     </button>)}
   </div>

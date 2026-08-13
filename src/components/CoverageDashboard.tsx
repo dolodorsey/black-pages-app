@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, ChevronRight, Database as DatabaseIcon, Ma
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '../lib/database.types.ts'
 import { fetchCoverageSnapshot, launchFindNow, type CoverageCell, type CoverageSnapshot, type FindNowResult } from '../services/coverage.ts'
+import { First100ReviewPack } from './First100ReviewPack.tsx'
 import { VerificationLane } from './VerificationLane.tsx'
 import { PublicationFactory } from './PublicationFactory.tsx'
 import { SourcePerformanceDashboard } from './SourcePerformanceDashboard.tsx'
@@ -99,6 +100,7 @@ export function CoverageDashboard({ supabase }: { supabase: SupabaseClient<Datab
       {findResult && <div className="find-now-result"><CheckCircle2 size={17} /><div><strong>Bulk discovery launched.</strong><span>{findResult.external_queue?.jobs_queued || 0} external page jobs queued · up to {findResult.quantity.toLocaleString()} businesses requested.</span><small>{findResult.classification?.classified_total || 0} existing candidates auto-classified during launch. New records route to verification before publication.</small></div></div>}
     </section>
 
+    <First100ReviewPack supabase={supabase} />
     <VerificationLane supabase={supabase} city={city} />
     <PublicationFactory supabase={supabase} />
     <SourcePerformanceDashboard supabase={supabase} />

@@ -1,5 +1,5 @@
 -- Snapshot the first 100 legacy Ready identities into a recommendation pack.
--- Recommendations never mutate verification or publication status; authenticated staff must apply them.
+-- Recommendations never mutate verification or publication status; authenticated staff applies decisions through the existing audited review function.
 create table if not exists public.black_pages_identity_review_packs(
  id uuid primary key default gen_random_uuid(),
  pack_key text not null unique,
@@ -17,7 +17,6 @@ create table if not exists public.black_pages_identity_review_pack_items(
  recommended_decision text not null check(recommended_decision in('approve','reject','needs_more_evidence')),
  recommendation_reason text not null,
  source_snapshot jsonb not null default '{}'::jsonb,
- applied_at timestamptz,
  created_at timestamptz not null default now(),
  unique(pack_id,identity_id)
 );
@@ -58,11 +57,10 @@ declare v_role text:=coalesce(auth.jwt()->'app_metadata'->>'khg_role','');v_resu
 begin
  if v_role not in('owner','admin','editor') then raise exception 'Staff access required' using errcode='42501';end if;
  select jsonb_build_object('pack',to_jsonb(p),'counts',jsonb_build_object(
-   'approve',count(*) filter(where i.recommended_decision='approve' and i.applied_at is null),
-   'needs_more_evidence',count(*) filter(where i.recommended_decision='needs_more_evidence' and i.applied_at is null),
-   'reject',count(*) filter(where i.recommended_decision='reject' and i.applied_at is null),
-   'applied',count(*) filter(where i.applied_at is not null)),
-  'items',coalesce(jsonb_agg(jsonb_build_object('identity_id',i.identity_id,'rank',i.rank,'recommended_decision',i.recommended_decision,'recommendation_reason',i.recommendation_reason,'source_snapshot',i.source_snapshot,'applied_at',i.applied_at) order by i.rank),'[]'::jsonb))
+   'approve',count(*) filter(where i.recommended_decision='approve'),
+   'needs_more_evidence',count(*) filter(where i.recommended_decision='needs_more_evidence'),
+   'reject',count(*) filter(where i.recommended_decision='reject')),
+  'items',coalesce(jsonb_agg(jsonb_build_object('identity_id',i.identity_id,'rank',i.rank,'recommended_decision',i.recommended_decision,'recommendation_reason',i.recommendation_reason,'source_snapshot',i.source_snapshot) order by i.rank),'[]'::jsonb))
  into v_result
  from public.black_pages_identity_review_packs p join public.black_pages_identity_review_pack_items i on i.pack_id=p.id
  where p.pack_key=p_pack_key group by p.id;
@@ -70,19 +68,3 @@ begin
 end $$;
 revoke all on function public.black_pages_staff_review_pack_snapshot(text) from public,anon,authenticated;
 grant execute on function public.black_pages_staff_review_pack_snapshot(text) to authenticated;
-
-create or replace function public.black_pages_staff_apply_review_pack_group(p_pack_key text,p_decision text,p_reason text)
-returns jsonb language plpgsql security definer set search_path='pg_catalog','public','auth' as $$
-declare v_role text:=coalesce(auth.jwt()->'app_metadata'->>'khg_role','');v_ids uuid[];v_result jsonb;
-begin
- if v_role not in('owner','admin','editor') then raise exception 'Staff access required' using errcode='42501';end if;
- if lower(p_decision) not in('approve','reject','needs_more_evidence') then raise exception 'Invalid decision';end if;
- select array_agg(i.identity_id order by i.rank) into v_ids from public.black_pages_identity_review_packs p join public.black_pages_identity_review_pack_items i on i.pack_id=p.id where p.pack_key=p_pack_key and i.recommended_decision=lower(p_decision) and i.applied_at is null;
- if coalesce(array_length(v_ids,1),0)=0 then return jsonb_build_object('identities_reviewed',0,'new_directory_records_published',0);end if;
- v_result:=public.black_pages_staff_batch_identity_review(v_ids,lower(p_decision),p_reason);
- update public.black_pages_identity_review_pack_items i set applied_at=now() from public.black_pages_identity_review_packs p where i.pack_id=p.id and p.pack_key=p_pack_key and i.recommended_decision=lower(p_decision) and i.identity_id=any(v_ids);
- update public.black_pages_identity_review_packs p set status=case when not exists(select 1 from public.black_pages_identity_review_pack_items i where i.pack_id=p.id and i.applied_at is null) then 'completed' else 'open' end,updated_at=now() where p.pack_key=p_pack_key;
- return v_result||jsonb_build_object('pack_key',p_pack_key,'recommended_group',lower(p_decision));
-end $$;
-revoke all on function public.black_pages_staff_apply_review_pack_group(text,text,text) from public,anon,authenticated;
-grant execute on function public.black_pages_staff_apply_review_pack_group(text,text,text) to authenticated;

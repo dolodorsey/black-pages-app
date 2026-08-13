@@ -1,0 +1,2 @@
+comment on table public.black_pages_candidate_identities is 'Private BLACK PAGES master business identities that group duplicate/multi-source candidate discoveries. No row in this table is a public directory listing.';
+comment on table public.black_pages_candidate_identity_reviews is 'Private human review audit for master business identities. Decisions advance candidate verification only; public publication is separate.';

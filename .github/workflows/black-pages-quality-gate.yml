@@ -82,6 +82,22 @@ jobs:
             exit 1
           fi
 
+      - name: Verify identity-bundle review safety contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="supabase/migrations/20260812230000_black_pages_candidate_identity_resolution.sql"
+          test -f "$file"
+          grep -Fq "Maximum 100 business identities per review batch" "$file"
+          grep -Fq "A human review reason is required" "$file"
+          grep -Fq "new_directory_records_published',0" "$file"
+          grep -Fq "new_directory_record_published',false" "$file"
+          grep -Fq "revoke all on public.black_pages_candidate_identities,public.black_pages_candidate_identity_members,public.black_pages_candidate_identity_reviews from public,anon,authenticated" "$file"
+          if grep -Eqi "grant .*black_pages_candidate_identity_(members|reviews).* to .*(anon|authenticated)" "$file"; then
+            echo "Private identity evidence tables must not be granted to client roles"
+            exit 1
+          fi
+
       - name: Verify privileged claim routines stay service-role only
         shell: bash
         run: |

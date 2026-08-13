@@ -1,0 +1,1 @@
+update public.black_pages_external_sources set adapter='trusted_black_source_v1',ownership_signal='black_chamber_directory',updated_at=now() where source_key in('greater_austin_black_chamber','aacc_pa_nj_de','black_chamber_arizona');

@@ -95,27 +95,11 @@ begin
  ) into v_counts
  from public.black_pages_candidate_identity_summary s join public.black_pages_candidate_identities i on i.id=s.identity_id
  where p_city is null or lower(s.city)=lower(p_city);
-
  select coalesce(jsonb_agg(row_json order by tier_rank,corroboration_score desc,source_count desc,max_verification_score desc,business_name),'[]'::jsonb) into v_rows
  from(
-  select (to_jsonb(s)||jsonb_build_object(
-    'review_tier',coalesce(i.corroboration_tier,s.review_tier),
-    'corroboration_score',i.corroboration_score,
-    'corroboration_tier',i.corroboration_tier,
-    'corroboration_reasons',i.corroboration_reasons,
-    'evidence',coalesce((select jsonb_agg(jsonb_build_object(
-      'candidate_id',q.id,'source_key',case when q.source_external_key like 'external:%' then split_part(q.source_external_key,':',2) else q.source_type end,
-      'source_name',es.source_name,'ownership_signal',es.ownership_signal,'source_url',q.external_source_url,'website_url',q.website_url,'phone',q.public_phone,'email',q.public_email,'address',q.source_address,'verification_score',q.verification_score,'verification_tier',q.verification_tier,'pipeline_stage',q.pipeline_stage
-     ) order by coalesce(q.verification_score,0) desc)
-     from public.black_pages_candidate_identity_members mm
-     join public.black_pages_candidate_queue q on q.id=mm.candidate_id
-     left join public.black_pages_external_sources es on es.source_key=case when q.source_external_key like 'external:%' then split_part(q.source_external_key,':',2) else null end
-     where mm.identity_id=s.identity_id),'[]'::jsonb)
-   )) row_json,
-   case coalesce(i.corroboration_tier,s.review_tier) when 'ready' then 1 when 'research' then 2 else 3 end tier_rank,
-   i.corroboration_score,s.source_count,s.max_verification_score,s.business_name
-  from public.black_pages_candidate_identity_summary s
-  join public.black_pages_candidate_identities i on i.id=s.identity_id
+  select (to_jsonb(s)||jsonb_build_object('review_tier',coalesce(i.corroboration_tier,s.review_tier),'corroboration_score',i.corroboration_score,'corroboration_tier',i.corroboration_tier,'corroboration_reasons',i.corroboration_reasons,'evidence',coalesce((select jsonb_agg(jsonb_build_object('candidate_id',q.id,'source_key',case when q.source_external_key like 'external:%' then split_part(q.source_external_key,':',2) else q.source_type end,'source_name',es.source_name,'ownership_signal',es.ownership_signal,'source_url',q.external_source_url,'website_url',q.website_url,'phone',q.public_phone,'email',q.public_email,'address',q.source_address,'verification_score',q.verification_score,'verification_tier',q.verification_tier,'pipeline_stage',q.pipeline_stage) order by coalesce(q.verification_score,0) desc) from public.black_pages_candidate_identity_members mm join public.black_pages_candidate_queue q on q.id=mm.candidate_id left join public.black_pages_external_sources es on es.source_key=case when q.source_external_key like 'external:%' then split_part(q.source_external_key,':',2) else null end where mm.identity_id=s.identity_id),'[]'::jsonb))) row_json,
+   case coalesce(i.corroboration_tier,s.review_tier) when 'ready' then 1 when 'research' then 2 else 3 end tier_rank,i.corroboration_score,s.source_count,s.max_verification_score,s.business_name
+  from public.black_pages_candidate_identity_summary s join public.black_pages_candidate_identities i on i.id=s.identity_id
   where i.status not in('reviewed','rejected') and(p_city is null or lower(s.city)=lower(p_city))
   order by tier_rank,i.corroboration_score desc,s.source_count desc,s.max_verification_score desc
   limit least(1000,greatest(1,coalesce(p_limit,500)))
@@ -124,40 +108,3 @@ begin
 end $$;
 revoke all on function public.black_pages_staff_identity_review_snapshot(text,integer) from public,anon,authenticated;
 grant execute on function public.black_pages_staff_identity_review_snapshot(text,integer) to authenticated,service_role;
-
--- Transparent service-only application of an owner-directed review decision. Never publishes.
-create or replace function public.black_pages_apply_owner_directed_review(p_identity_ids uuid[],p_decision text,p_reason text)
-returns jsonb language plpgsql security definer set search_path='pg_catalog','public','auth' as $$
-declare v_decision text:=lower(btrim(coalesce(p_decision,'')));v_reason text:=left(btrim(coalesce(p_reason,'')),2000);v_id uuid;v_done integer:=0;v_candidates integer:=0;v_n integer;v_snapshot jsonb;
-begin
- if coalesce(auth.role(),'')<>'service_role' and current_user<>'postgres' then raise exception 'Service role required' using errcode='42501';end if;
- if v_decision not in('approve','reject','needs_more_evidence') then raise exception 'Invalid decision';end if;
- if v_reason='' then raise exception 'Review reason required';end if;
- if coalesce(array_length(p_identity_ids,1),0)=0 or array_length(p_identity_ids,1)>100 then raise exception 'Review batch must contain 1-100 identities';end if;
- perform public.black_pages_refresh_corroboration_scores();
- foreach v_id in array p_identity_ids loop
-  select jsonb_build_object('identity',to_jsonb(i),'summary',to_jsonb(s),'owner_directed',true,'automated_execution',true) into v_snapshot
-  from public.black_pages_candidate_identities i join public.black_pages_candidate_identity_summary s on s.identity_id=i.id where i.id=v_id;
-  if v_snapshot is null then continue;end if;
-  if v_decision='approve' then
-   if not exists(select 1 from public.black_pages_candidate_identities where id=v_id and corroboration_tier='ready') then raise exception 'Identity % is not corroboration-ready',v_id;end if;
-   if not exists(select 1 from public.black_pages_candidate_identity_members m join public.black_pages_candidate_queue q on q.id=m.candidate_id left join public.black_pages_external_sources s on s.source_key=case when q.source_external_key like 'external:%' then split_part(q.source_external_key,':',2) else null end where m.identity_id=v_id and nullif(q.external_source_url,'') is not null and s.ownership_signal in('certified_black_business','black_restaurant_week_participant','black_business_directory')) then raise exception 'Identity % lacks qualifying ownership evidence',v_id;end if;
-   update public.black_pages_candidate_queue q set ownership_evidence_status='owner_confirmed',pipeline_stage='approved',assigned_researcher='owner-directed-assistant-review',next_action_at=null,notes=left(concat_ws(E'\n',nullif(q.notes,''),'Owner-directed evidence review approved: '||v_reason),4000),updated_at=now() where q.id in(select candidate_id from public.black_pages_candidate_identity_members where identity_id=v_id) and q.pipeline_stage not in('published','rejected','do_not_contact');
-   get diagnostics v_n=row_count;v_candidates:=v_candidates+v_n;update public.black_pages_candidate_identities set status='reviewed',updated_at=now() where id=v_id;
-  elsif v_decision='reject' then
-   update public.black_pages_candidate_queue q set ownership_evidence_status='not_black_owned',pipeline_stage='rejected',assigned_researcher='owner-directed-assistant-review',notes=left(concat_ws(E'\n',nullif(q.notes,''),'Owner-directed evidence review rejected: '||v_reason),4000),updated_at=now() where q.id in(select candidate_id from public.black_pages_candidate_identity_members where identity_id=v_id) and q.pipeline_stage not in('published','do_not_contact');
-   get diagnostics v_n=row_count;v_candidates:=v_candidates+v_n;update public.black_pages_candidate_identities set status='rejected',updated_at=now() where id=v_id;
-  else
-   update public.black_pages_candidate_queue q set ownership_evidence_status='unreviewed',pipeline_stage='research',assigned_researcher='black-pages-research-worker',next_action_at=now(),notes=left(concat_ws(E'\n',nullif(q.notes,''),'Owner-directed review requested independent ownership corroboration: '||v_reason),4000),updated_at=now() where q.id in(select candidate_id from public.black_pages_candidate_identity_members where identity_id=v_id) and q.pipeline_stage not in('published','rejected','do_not_contact');
-   get diagnostics v_n=row_count;v_candidates:=v_candidates+v_n;update public.black_pages_candidate_identities set status='needs_more_evidence',updated_at=now() where id=v_id;
-  end if;
-  insert into public.black_pages_candidate_identity_reviews(identity_id,decision,reason,reviewer_user_id,reviewer_role,evidence_snapshot,candidates_affected,new_directory_records_published)
-  values(v_id,v_decision,v_reason,null,'owner_directed_assistant_review',v_snapshot,(select count(*) from public.black_pages_candidate_identity_members where identity_id=v_id),0);
-  insert into public.black_pages_candidate_activity(candidate_id,activity_type,outcome,details,performed_by)
-  select candidate_id,'verification_note',v_decision,jsonb_build_object('identity_id',v_id,'reason',v_reason,'owner_directed',true,'automated_execution',true,'new_directory_record_published',false),'owner-directed-assistant-review' from public.black_pages_candidate_identity_members where identity_id=v_id;
-  v_done:=v_done+1;
- end loop;
- return jsonb_build_object('identities_reviewed',v_done,'candidate_records_advanced',v_candidates,'new_directory_records_published',0,'review_origin','owner_directed_assistant_review');
-end $$;
-revoke all on function public.black_pages_apply_owner_directed_review(uuid[],text,text) from public,anon,authenticated;
-grant execute on function public.black_pages_apply_owner_directed_review(uuid[],text,text) to service_role;

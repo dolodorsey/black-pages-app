@@ -98,6 +98,23 @@ jobs:
             exit 1
           fi
 
+      - name: Verify publication factory safety contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="supabase/migrations/20260813002000_black_pages_publication_factory_source_intelligence.sql"
+          test -f "$file"
+          grep -Fq "A final publication reason is required" "$file"
+          grep -Fq "Draft must be Ready before publication" "$file"
+          grep -Fq "Identity is not human-approved" "$file"
+          grep -Fq "Publication requires source evidence" "$file"
+          grep -Fq "revoke all on public.black_pages_publication_drafts from public,anon,authenticated" "$file"
+          grep -Fq "grant execute on function public.black_pages_staff_publish_draft(uuid,text) to authenticated" "$file"
+          if grep -Eqi "grant .*black_pages_publication_drafts.* to .*(anon|authenticated)" "$file"; then
+            echo "Publication drafts must remain private"
+            exit 1
+          fi
+
       - name: Verify privileged claim routines stay service-role only
         shell: bash
         run: |

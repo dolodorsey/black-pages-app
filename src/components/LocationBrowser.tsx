@@ -2,6 +2,11 @@ import { ChevronRight, MapPin } from 'lucide-react'
 import { pluralize } from '../lib/categories.ts'
 import type { LocationGroup } from '../services/directory.ts'
 
+function displayCity(city: string, state: string) {
+  const cleanedCity = state.toUpperCase() === 'DC' ? city.replace(/\s+dc$/i, '').trim() : city.trim()
+  return `${cleanedCity}${state ? `, ${state.toUpperCase()}` : ''}`
+}
+
 export function LocationBrowser({ locations, onSelectLocation, limit = 8 }: {
   locations: readonly LocationGroup[]
   onSelectLocation: (value: string) => void
@@ -18,7 +23,7 @@ export function LocationBrowser({ locations, onSelectLocation, limit = 8 }: {
       {visible.map(location => <article className="location-city-card" key={location.key}>
         <button className="location-city-main" onClick={() => onSelectLocation(`${location.city} ${location.state}`.trim())}>
           <span className="location-pin"><MapPin size={17} /></span>
-          <span><strong>{location.city}{location.state ? `, ${location.state}` : ''}</strong><small>{pluralize(location.count, 'business', 'businesses')}</small></span>
+          <span><strong>{displayCity(location.city, location.state)}</strong><small>{pluralize(location.count, 'business', 'businesses')}</small></span>
           <ChevronRight size={17} />
         </button>
         {(location.neighborhoods.length > 0 || location.postalCodes.length > 0) && <div className="location-drilldown">

@@ -7,9 +7,11 @@ export function AppMark() {
 }
 
 export function StatusBadge({ business }: { business: DirectoryBusiness }) {
-  return business.owner_verified
-    ? <span className="status-badge owner"><ShieldCheck size={12} /> Owner verified</span>
-    : <span className="status-badge"><BadgeCheck size={12} /> Black-owned profile</span>
+  if (business.owner_verified) return <span className="status-badge owner"><ShieldCheck size={12} /> Owner verified</span>
+  if (business.ownership_status === 'enterprise_sourced' || business.ownership_status === 'source_verified') {
+    return <span className="status-badge"><BadgeCheck size={12} /> Source verified</span>
+  }
+  return <span className="status-badge"><BadgeCheck size={12} /> Black-owned profile</span>
 }
 
 export function Rating({ business }: { business: DirectoryBusiness }) {

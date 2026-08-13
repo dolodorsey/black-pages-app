@@ -1,4 +1,4 @@
-.bottom-nav{grid-template-columns:repeat(6,1fr)}
+.bottom-nav{grid-template-columns:repeat(5,1fr)}
 .bottom-nav button{font-size:7px}
 
 .categories-screen{padding:28px 16px 34px;animation:fade .35s ease both}

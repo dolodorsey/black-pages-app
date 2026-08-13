@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Bookmark, ExternalLink, MapPin, Phone, Store } from 'lucide-react'
 import { labelCategory, labelSubcategory } from '../lib/categories'
 import type { DirectoryBusiness } from '../services/directory'
@@ -10,13 +11,16 @@ export function BusinessCard({ business, saved, onOpen, onSave, compact = false 
   onSave: () => void
   compact?: boolean
 }) {
+  const [imageFailed, setImageFailed] = useState(false)
   const categoryLine = business.subcategory
     ? `${labelCategory(business.category)} · ${labelSubcategory(business.subcategory)}`
     : labelCategory(business.category)
 
   return <article className={`business-card ${compact ? 'compact' : ''}`} onClick={onOpen}>
     <div className="business-image">
-      {business.image_url ? <img src={business.image_url} alt="" loading="lazy" /> : <div className="image-fallback"><Store /></div>}
+      {business.image_url && !imageFailed
+        ? <img src={business.image_url} alt="" loading="lazy" onError={() => setImageFailed(true)} />
+        : <div className="image-fallback" aria-hidden="true"><Store /></div>}
       <div className="image-shade" />
       <button className={`save-button ${saved ? 'saved' : ''}`} aria-label={saved ? 'Remove from saved' : 'Save business'} onClick={event => { event.stopPropagation(); onSave() }}>
         <Bookmark size={17} fill={saved ? 'currentColor' : 'none'} />

@@ -4,6 +4,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '../lib/database.types.ts'
 import { fetchCoverageSnapshot, launchFindNow, type CoverageCell, type CoverageSnapshot, type FindNowResult } from '../services/coverage.ts'
 import { VerificationLane } from './VerificationLane.tsx'
+import { PublicationFactory } from './PublicationFactory.tsx'
+import { SourcePerformanceDashboard } from './SourcePerformanceDashboard.tsx'
 import './CoverageDashboard.css'
 
 type StatusFilter = 'all' | 'empty' | 'candidate_found' | 'covered'
@@ -98,6 +100,8 @@ export function CoverageDashboard({ supabase }: { supabase: SupabaseClient<Datab
     </section>
 
     <VerificationLane supabase={supabase} city={city} />
+    <PublicationFactory supabase={supabase} />
+    <SourcePerformanceDashboard supabase={supabase} />
 
     <section className="coverage-category-health">
       <div className="coverage-section-title"><span>CATEGORY PRESSURE</span><h2>Where the directory is thinnest.</h2></div>

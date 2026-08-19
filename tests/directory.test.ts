@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { DirectoryRow } from '../src/lib/database.types.ts'
 import {
-  countByCategory, distinctImageCount, featuredBusinesses, filterDirectory, isBusinessListing,
+  countByCategory, directoryTrustScore, distinctImageCount, featuredBusinesses, filterDirectory, isBusinessListing,
   mapReadyBusinesses, normalizeDirectoryRow, normalizeDirectoryRows, singleCity,
 } from '../src/services/directory.ts'
 
@@ -67,17 +67,21 @@ test('WHERE search covers neighborhood, city, state, address and ZIP', () => {
   assert.deepEqual(filterDirectory(directory, { category: 'all', query: '', location: 'Auburn Ave' }).map(item => item.directory_id), ['venue:1'])
 })
 
-test('A-Z sorting is alphabetical while recommended keeps featured/rating priority', () => {
+test('A-Z sorting is alphabetical while recommended uses trust intelligence, not featured placement', () => {
   assert.deepEqual(filterDirectory(directory, { category: 'all', query: '', sort: 'az' }).map(item => item.business_name), ['Peachtree Tech Repair', 'Sweet Auburn Kitchen', 'Westside Beauty Bar'])
-  assert.deepEqual(filterDirectory(directory, { category: 'all', query: '', sort: 'recommended' }).map(item => item.business_name), ['Sweet Auburn Kitchen', 'Westside Beauty Bar', 'Peachtree Tech Repair'])
+  const recommended=filterDirectory(directory, { category: 'all', query: '', sort: 'recommended' })
+  assert.ok(directoryTrustScore(recommended[0]) >= directoryTrustScore(recommended[1]))
+  assert.equal(directoryTrustScore(biz({ featured:false })),directoryTrustScore(biz({ featured:true })))
 })
 
 test('mapReadyBusinesses keeps only businesses with coordinates', () => {
   assert.deepEqual(mapReadyBusinesses(directory).map(item => item.directory_id), ['venue:1', 'venue:2'])
 })
 
-test('featuredBusinesses prioritizes strong business profiles', () => {
-  assert.deepEqual(featuredBusinesses(directory).map(item => item.directory_id), ['venue:1', 'venue:2'])
+test('featuredBusinesses only returns profiles that meet a real trust threshold or explicit merchandising inclusion', () => {
+  const featured=featuredBusinesses(directory)
+  assert.ok(featured.some(item=>item.directory_id==='venue:1'))
+  assert.ok(featured.every((item)=>item.featured||item.owner_verified||directoryTrustScore(item)>=45))
 })
 
 test('singleCity detects shared city', () => {

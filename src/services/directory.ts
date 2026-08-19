@@ -74,10 +74,7 @@ function toNullableNumber(value: number | string | null | undefined): number | n
   const parsed = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(parsed) ? parsed : null
 }
-
-function toText(value: string | null | undefined): string {
-  return typeof value === 'string' ? value : ''
-}
+function toText(value: string | null | undefined): string { return typeof value === 'string' ? value : '' }
 
 export function normalizeDirectoryRow(row: DirectoryRow): DirectoryBusiness {
   return {
@@ -105,7 +102,6 @@ export function countByCategory(businesses: readonly DirectoryBusiness[]): Categ
   businesses.forEach(business => counts.set(business.category, (counts.get(business.category) || 0) + 1))
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || labelCategory(a[0]).localeCompare(labelCategory(b[0])))
 }
-
 export function countBySubcategory(businesses: readonly DirectoryBusiness[], category = 'all'): SubcategoryCount[] {
   const counts = new Map<string, number>()
   businesses.forEach(business => { if (category !== 'all' && business.category !== category) return; const key = taxonomyKey(business.subcategory); if (key) counts.set(key, (counts.get(key) || 0) + 1) })
@@ -118,17 +114,12 @@ export function distanceMiles(a: GeoPoint, b: GeoPoint): number {
   const hav = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2
   return 2 * radius * Math.asin(Math.sqrt(hav))
 }
-
 export function distanceFrom(business: DirectoryBusiness, point: GeoPoint | null | undefined): number | null {
   if (!point || business.latitude == null || business.longitude == null) return null
   return distanceMiles(point, { latitude: business.latitude, longitude: business.longitude })
 }
 
-/**
- * Resource Exchange recommendation score.
- * Trust, identity and useful listing completeness dominate. Ratings are only 5% and proximity is capped at 5%.
- * A paid/featured placement flag never changes recommendation quality.
- */
+/** Trust, identity and usefulness dominate; rating and proximity are each capped at 5%. Featured placement contributes zero. */
 export function directoryTrustScore(business: DirectoryBusiness, near?: GeoPoint | null): number {
   let score = 0
   if (business.owner_verified) score += 30
@@ -141,18 +132,11 @@ export function directoryTrustScore(business: DirectoryBusiness, near?: GeoPoint
   if (business.specialties.length || business.tags.length) score += 5
   if (business.image_url) score += 5
   score += Math.min(5, Math.max(0, Number(business.rating || 0)))
-  if (near) {
-    const miles = distanceFrom(business, near)
-    if (miles != null) score += Math.max(0, 5 - Math.min(5, miles / 10))
-  }
+  if (near) { const miles = distanceFrom(business, near); if (miles != null) score += Math.max(0, 5 - Math.min(5, miles / 10)) }
   return Number(score.toFixed(2))
 }
 
-/** WHAT + WHERE + taxonomy + near-me directory search. */
-export function filterDirectory(
-  businesses: readonly DirectoryBusiness[],
-  { category, subcategory = 'all', query, location = '', sort = 'recommended', near = null, maxDistanceMiles = 50 }: DirectoryFilter,
-): DirectoryBusiness[] {
+export function filterDirectory(businesses: readonly DirectoryBusiness[], { category, subcategory = 'all', query, location = '', sort = 'recommended', near = null, maxDistanceMiles = 50 }: DirectoryFilter): DirectoryBusiness[] {
   const needle = query.trim().toLowerCase(), locationNeedle = location.trim().toLowerCase()
   const results = businesses.filter(business => {
     const categoryMatch = category === 'all' || business.category === category
@@ -162,7 +146,6 @@ export function filterDirectory(
     const nearDistance = distanceFrom(business, near), nearMatch = !near || (nearDistance != null && nearDistance <= maxDistanceMiles)
     return categoryMatch && subcategoryMatch && searchMatch && locationMatch && nearMatch
   })
-
   return [...results].sort((a, b) => {
     if (sort === 'distance' && near) return (distanceFrom(a, near) ?? Number.POSITIVE_INFINITY) - (distanceFrom(b, near) ?? Number.POSITIVE_INFINITY)
     if (sort === 'az') return a.business_name.localeCompare(b.business_name)
@@ -180,22 +163,35 @@ export function buildLocationGroups(businesses: readonly DirectoryBusiness[]): L
   })
   return [...groups.entries()].map(([key, group]) => ({ key, city: group.city, state: group.state, count: group.count, neighborhoods: [...group.neighborhoods].sort(), postalCodes: [...group.postalCodes].sort() })).sort((a, b) => b.count - a.count || a.city.localeCompare(b.city))
 }
-
 export function featuredBusinesses(businesses: readonly DirectoryBusiness[]): DirectoryBusiness[] {
-  return [...businesses]
-    .filter(business => business.featured || business.owner_verified || directoryTrustScore(business) >= 45)
-    .sort((a, b) => directoryTrustScore(b) - directoryTrustScore(a) || a.business_name.localeCompare(b.business_name))
-    .slice(0, 8)
+  return [...businesses].filter(business => business.featured || business.owner_verified || directoryTrustScore(business) >= 45).sort((a, b) => directoryTrustScore(b) - directoryTrustScore(a) || a.business_name.localeCompare(b.business_name)).slice(0, 8)
 }
-
 export function mapReadyBusinesses(businesses: readonly DirectoryBusiness[]) { return businesses.filter(business => business.latitude != null && business.longitude != null) }
 export function singleCity(businesses: readonly DirectoryBusiness[]): string | null { const cities = new Set(businesses.map(business => business.city.trim()).filter(Boolean)); return cities.size === 1 ? [...cities][0] : null }
 export function distinctImageCount(businesses: readonly DirectoryBusiness[]): number { return new Set(businesses.map(business => business.image_url).filter((url): url is string => Boolean(url))).size }
 
 export type DirectoryResult = { businesses: DirectoryBusiness[]; error: string | null }
-
 export async function fetchDirectory(client: TypedSupabaseClient): Promise<DirectoryResult> {
   const { data, error } = await client.from('black_pages_directory_v2').select('*').order('business_name')
   if (error) return { businesses: [], error: 'The live business directory could not be loaded.' }
   return { businesses: normalizeDirectoryRows(data).filter(isBusinessListing), error: null }
+}
+
+// Preserve unrelated account workflows while directory ranking changes independently.
+export async function fetchSavedDirectoryIds(client: TypedSupabaseClient, userAuthId: string): Promise<string[]> {
+  const { data } = await client.from('black_pages_favorites').select('directory_id').eq('user_auth_id', userAuthId)
+  return (data ?? []).map(item => item.directory_id)
+}
+export async function addFavorite(client: TypedSupabaseClient, userAuthId: string, directoryId: string): Promise<{ error: boolean }> {
+  const { error } = await client.from('black_pages_favorites').insert({ user_auth_id: userAuthId, directory_id: directoryId })
+  return { error: Boolean(error) }
+}
+export async function removeFavorite(client: TypedSupabaseClient, userAuthId: string, directoryId: string): Promise<{ error: boolean }> {
+  const { error } = await client.from('black_pages_favorites').delete().eq('user_auth_id', userAuthId).eq('directory_id', directoryId)
+  return { error: Boolean(error) }
+}
+export type ClaimSubmission = { directoryId: string; claimantAuthId: string; claimantName: string; claimantEmail: string; roleAtBusiness: string }
+export async function submitOwnerClaim(client: TypedSupabaseClient, claim: ClaimSubmission): Promise<{ error: string | null }> {
+  const { error } = await client.from('black_pages_claims').upsert({ directory_id: claim.directoryId, claimant_auth_id: claim.claimantAuthId, claimant_name: claim.claimantName, claimant_email: claim.claimantEmail, role_at_business: claim.roleAtBusiness }, { onConflict: 'directory_id,claimant_auth_id' })
+  return { error: error ? error.message : null }
 }
